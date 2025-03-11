@@ -29,7 +29,7 @@
 ## 安装与使用
 1. **克隆项目**
    ```sh
-   git clone https://github.com/your_username/screeps.git
+   git clone https://github.com/siqiongbil/screeps/
    cd screeps
    ```
 
