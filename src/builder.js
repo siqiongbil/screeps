@@ -31,50 +31,53 @@ module.exports.run = function (creep) {
             }
         }
     } else {
-        // 检查当前房间是否已经有建造者
-        const buildersInRoom = creep.room.find(FIND_MY_CREEPS, { filter: c => c.memory.role === 'builder' });
-        if (buildersInRoom.length === 0 || creep.room.name === creep.memory.productionRoom) {
-            // 优先建造当前房间内的工地
-            const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
-                filter: cs => cs.room.name === creep.room.name
-            });
-            if (target) {
-                if (creep.build(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
-                }
-                return;
-            }
-
-            // 若无建造任务，则检查是否有其他房间需要建造者
-            const otherRooms = Object.keys(Game.rooms).filter(roomName => roomName !== creep.room.name && roomName !== creep.memory.homeRoom);
-            for (const roomName of otherRooms) {
-                const room = Game.rooms[roomName];
-                const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
-                if (constructionSites.length > 0) {
-                    const buildersInOtherRoom = room.find(FIND_MY_CREEPS, { filter: c => c.memory.role === 'builder' });
-                    if (buildersInOtherRoom.length === 0) {
-                        creep.moveTo(room.controller);
-                        return;
+        // 优先建造生产自己的房间内的工地
+        const productionRoom = Game.rooms[creep.memory.homeRoom];
+        if (productionRoom) {
+            const productionRoomSites = productionRoom.find(FIND_CONSTRUCTION_SITES);
+            if (productionRoomSites.length > 0) {
+                const target = creep.pos.findClosestByPath(productionRoomSites);
+                if (target) {
+                    if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                     }
+                    return;
                 }
             }
+        }
 
-            // 若无建造任务且没有其他房间需要建造者，则升级当前房间控制器
-            if (creep.room.controller) {
-                if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
+        // 若生产自己的房间没有工地，则优先建造当前房间内的工地
+        const target = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES, {
+            filter: cs => cs.room.name === creep.room.name
+        });
+        if (target) {
+            if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+            }
+            return;
+        }
+
+        // 若无建造任务，则检查是否有其他房间需要建造者
+        const otherRooms = Object.keys(Game.rooms).filter(roomName => roomName !== creep.room.name && roomName !== creep.memory.homeRoom);
+        for (const roomName of otherRooms) {
+            const room = Game.rooms[roomName];
+            const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+            if (constructionSites.length > 0) {
+                const buildersInOtherRoom = room.find(FIND_MY_CREEPS, { filter: c => c.memory.role === 'builder' });
+                if (buildersInOtherRoom.length === 0) {
+                    creep.moveTo(room.controller);
+                    return;
                 }
-            } else {
-                console.log(`Room ${creep.room.name} does not have a controller.`);
+            }
+        }
+
+        // 若无建造任务且没有其他房间需要建造者，则升级当前房间控制器
+        if (creep.room.controller) {
+            if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
             }
         } else {
-            // 如果当前房间已经有建造者且不是生产自己的房间，则返回生产自己的房间
-            const productionRoom = Game.rooms[creep.memory.productionRoom];
-            if (productionRoom) {
-                creep.moveTo(productionRoom.controller);
-            } else {
-                console.log(`Production room ${creep.memory.productionRoom} does not exist.`);
-            }
+            console.log(`Room ${creep.room.name} does not have a controller.`);
         }
     }
 };

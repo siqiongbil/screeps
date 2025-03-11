@@ -166,27 +166,9 @@ function createExtensions(room, maxExtensions) {
 
     if (totalExtensions < maxExtensions) {
         for (let i = totalExtensions; i < maxExtensions; i++) {
-            let pos;
-            let attempts = 0;
-            const maxAttempts = 10; // 最大尝试次数
-            do {
-                // 增加随机偏移
-                const xOffset = Math.floor(Math.random() * 5) - 2; // 随机偏移 -2 到 2
-                const yOffset = Math.floor(Math.random() * 5) - 2;
-                pos = room.getPositionAt(25 + i % 5 + xOffset, 25 + Math.floor(i / 5) + yOffset);
-
-                // 检查当前位置及周围 1 格范围内是否有冲突
-                const isOccupied = pos.lookFor(LOOK_STRUCTURES).some(s => s.structureType === STRUCTURE_EXTENSION) ||
-                                   pos.lookFor(LOOK_CONSTRUCTION_SITES).some(s => s.structureType === STRUCTURE_EXTENSION);
-                const nearbyOccupied = pos.findInRange(FIND_STRUCTURES, 1).some(s => s.structureType === STRUCTURE_EXTENSION) ||
-                                       pos.findInRange(FIND_CONSTRUCTION_SITES, 1).some(s => s.structureType === STRUCTURE_EXTENSION);
-
-                if (!isOccupied && !nearbyOccupied) break; // 找到合适位置，退出循环
-                attempts++;
-            } while (attempts < maxAttempts);
-
-            if (pos && !pos.lookFor(LOOK_STRUCTURES).some(s => s.structureType === STRUCTURE_EXTENSION) &&
-                !pos.lookFor(LOOK_CONSTRUCTION_SITES).some(s => s.structureType === STRUCTURE_EXTENSION)) {
+            const pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 固定位置，移除随机偏移
+            if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_EXTENSION) &&
+                !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_EXTENSION)) {
                 const result = room.createConstructionSite(pos, STRUCTURE_EXTENSION);
                 if (result === OK) {
                     console.log(`Extension construction site created at ${pos}`);
