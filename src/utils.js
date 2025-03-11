@@ -28,7 +28,12 @@ module.exports.ensureInHomeRoom = function (creep) {
         creep.say(`前往 ${creep.memory.homeRoom} 中心位置...`);
         return false;
     }
-    creep.say(`正在 ${creep.memory.homeRoom} 内工作`);
+        // 修改 creep 的说话内容，显示名字加房间名，总长度不超过 10 字符
+        let message = `${creep.name} ${creep.room.name}`;
+        if (message.length > 10) {
+            message = `${creep.name.slice(0, 10 - creep.room.name.length - 1)} ${creep.room.name}`;
+        }
+        creep.say(message);
     return true;
 };
 
