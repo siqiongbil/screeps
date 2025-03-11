@@ -4,19 +4,19 @@ const canInvasionSucceed = require('./invasion').canInvasionSucceed;
 
 // 定义各角色的配置：包含生成所需的身体部件和目标数量
 const roles = {
-    harvester:        { body: [WORK, CARRY, MOVE], count: 2 },
-    strongHarvester:  { body: [WORK, WORK, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE], count: 1 }, // 强化版采集者
-    upgrader:         { body: [WORK, CARRY, MOVE], count: 2 },
-    builder:          { body: [WORK, CARRY, MOVE], count: 2 },
-    repairer:         { body: [WORK, CARRY, MOVE], count: 1 },
-    soldier:          { body: [TOUGH, MOVE, MOVE, ATTACK, ATTACK], count: 2 },
-    claimer:          { body: [CLAIM, MOVE], count: 1 },
-    ranger:           { body: [TOUGH, MOVE, RANGED_ATTACK, RANGED_ATTACK], count: 2 },
-    healer:           { body: [MOVE, HEAL, HEAL], count: 1 },
-    defender:         { body: [TOUGH, MOVE, ATTACK, ATTACK], count: 2 },
+    harvester: { body: [WORK, CARRY, MOVE], count: 2 },
+    strongHarvester: { body: [WORK, WORK, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE], count: 1 }, // 强化版采集者
+    upgrader: { body: [WORK, CARRY, MOVE], count: 2 },
+    builder: { body: [WORK, CARRY, MOVE], count: 2 },
+    repairer: { body: [WORK, CARRY, MOVE], count: 1 },
+    soldier: { body: [TOUGH, MOVE, MOVE, ATTACK, ATTACK], count: 2 },
+    claimer: { body: [CLAIM, MOVE], count: 1 },
+    ranger: { body: [TOUGH, MOVE, RANGED_ATTACK, RANGED_ATTACK], count: 2 },
+    healer: { body: [MOVE, HEAL, HEAL], count: 1 },
+    defender: { body: [TOUGH, MOVE, ATTACK, ATTACK], count: 2 },
     mineralHarvester: { body: [WORK, WORK, CARRY, MOVE], count: 1 },
-    linkManager:      { body: [CARRY, MOVE], count: 1 }, // 新增 LinkManager 角色
-    transporter:      { body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE], count: 1 } // 新增资源运送者角色
+    linkManager: { body: [CARRY, MOVE], count: 1 }, // 新增 LinkManager 角色
+    transporter: { body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE], count: 1 } // 新增资源运送者角色
 };
 
 module.exports.spawnCreeps = function (room) {
@@ -27,19 +27,19 @@ module.exports.spawnCreeps = function (room) {
 
     // 统计当前房间各角色数量（只统计在本房间的 creep）
     const counts = {
-        harvester:        _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length,
-        strongHarvester:  _.filter(Game.creeps, c => c.memory.role === 'strongHarvester' && c.room.name === room.name).length, // 强化版采集者
-        upgrader:         _.filter(Game.creeps, c => c.memory.role === 'upgrader' && c.room.name === room.name).length,
-        builder:          _.filter(Game.creeps, c => c.memory.role === 'builder' && c.room.name === room.name).length,
-        repairer:         _.filter(Game.creeps, c => c.memory.role === 'repairer' && c.room.name === room.name).length,
-        soldier:          _.filter(Game.creeps, c => c.memory.role === 'soldier' && c.room.name === room.name).length,
-        claimer:          _.filter(Game.creeps, c => c.memory.role === 'claimer' && c.room.name === room.name).length,
-        ranger:           _.filter(Game.creeps, c => c.memory.role === 'ranger' && c.room.name === room.name).length,
-        healer:           _.filter(Game.creeps, c => c.memory.role === 'healer' && c.room.name === room.name).length,
-        defender:         _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name).length,
+        harvester: _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length,
+        strongHarvester: _.filter(Game.creeps, c => c.memory.role === 'strongHarvester' && c.room.name === room.name).length, // 强化版采集者
+        upgrader: _.filter(Game.creeps, c => c.memory.role === 'upgrader' && c.room.name === room.name).length,
+        builder: _.filter(Game.creeps, c => c.memory.role === 'builder' && c.room.name === room.name).length,
+        repairer: _.filter(Game.creeps, c => c.memory.role === 'repairer' && c.room.name === room.name).length,
+        soldier: _.filter(Game.creeps, c => c.memory.role === 'soldier' && c.room.name === room.name).length,
+        claimer: _.filter(Game.creeps, c => c.memory.role === 'claimer' && c.room.name === room.name).length,
+        ranger: _.filter(Game.creeps, c => c.memory.role === 'ranger' && c.room.name === room.name).length,
+        healer: _.filter(Game.creeps, c => c.memory.role === 'healer' && c.room.name === room.name).length,
+        defender: _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name).length,
         mineralHarvester: _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.room.name === room.name).length,
-        linkManager:      _.filter(Game.creeps, c => c.memory.role === 'linkManager' && c.room.name === room.name).length, // 新增 LinkManager 角色
-        transporter:      _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length // 新增资源运送者角色
+        linkManager: _.filter(Game.creeps, c => c.memory.role === 'linkManager' && c.room.name === room.name).length, // 新增 LinkManager 角色
+        transporter: _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length // 新增资源运送者角色
     };
 
     // 检查 Storage 状态
@@ -177,6 +177,22 @@ module.exports.spawnCreeps = function (room) {
         }
     }
 
+    // 检测周围是否有无主房间
+    const targetRoomName = invasion.chooseInvasionTarget(room);
+    if (targetRoomName) {
+        const targetRoom = Game.rooms[targetRoomName];
+        if (targetRoom && targetRoom.controller && !targetRoom.controller.owner) {
+            // 控制器到达2级且资源大于200时，生产宣称者
+            if (room.controller.level >= 2 && room.energyAvailable >= 200) {
+                const newName = `Claimer_${Game.time}`;
+                const body = [CLAIM, MOVE];
+                if (room.spawnCreep(body, newName, { memory: { role: 'claimer', invasionTarget: targetRoomName } }) === OK) {
+                    console.log(`Spawning new claimer: ${newName} for room ${targetRoomName}`);
+                }
+            }
+        }
+    }
+
     // 当能量大于等于 500 且普通采集者数量足够时，生成加强版采集者
     if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 500 && counts.strongHarvester < roles.strongHarvester.count) {
         const newName = `StrongHarvester_${Game.time}`;
@@ -249,55 +265,55 @@ module.exports.spawnCreeps = function (room) {
         }
     }
 
-        // 入侵扩张：当房间经济稳定且控制器等级 ≥ 2 时启动入侵任务
-        if (roomEnergyAvailable > 500 && room.controller.level >= 2) {
-            // 如果还没有设置入侵目标，则选择一个相邻房间作为目标
-            if (!room.memory.invasionTarget) {
-                const invasionTarget = chooseInvasionTarget(room);
-                if (invasionTarget) {
-                    room.memory.invasionTarget = invasionTarget;
-                    console.log(`Room ${room.name} launching invasion: target ${invasionTarget}`);
-                }
+    // 入侵扩张：当房间经济稳定且控制器等级 ≥ 2 时启动入侵任务
+    if (roomEnergyAvailable > 500 && room.controller.level >= 2) {
+        // 如果还没有设置入侵目标，则选择一个相邻房间作为目标
+        if (!room.memory.invasionTarget) {
+            const invasionTarget = chooseInvasionTarget(room);
+            if (invasionTarget) {
+                room.memory.invasionTarget = invasionTarget;
+                console.log(`Room ${room.name} launching invasion: target ${invasionTarget}`);
             }
-            // 若已有入侵目标，则生成入侵队伍：Soldier、Ranger、Healer、Claimer
-            if (room.memory.invasionTarget) {
-                // 判断入侵队伍是否能够成功
-                if (!canInvasionSucceed(room, room.memory.invasionTarget)) {
-                    // 如果不能成功，则选择下一个房间再判断
-                    room.memory.invasionTarget = null;
+        }
+        // 若已有入侵目标，则生成入侵队伍：Soldier、Ranger、Healer、Claimer
+        if (room.memory.invasionTarget) {
+            // 判断入侵队伍是否能够成功
+            if (!canInvasionSucceed(room, room.memory.invasionTarget)) {
+                // 如果不能成功，则选择下一个房间再判断
+                room.memory.invasionTarget = null;
+                return;
+            }
+
+            if (counts.soldier < roles.soldier.count) {
+                const newName = `Soldier_${Game.time}`;
+                if (spawn.spawnCreep(roles.soldier.body, newName, { memory: { role: 'soldier', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
+                    console.log(`Spawning new soldier: ${newName}`);
                     return;
                 }
-    
-                if (counts.soldier < roles.soldier.count) {
-                    const newName = `Soldier_${Game.time}`;
-                    if (spawn.spawnCreep(roles.soldier.body, newName, { memory: { role: 'soldier', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                        console.log(`Spawning new soldier: ${newName}`);
-                        return;
-                    }
+            }
+            if (counts.ranger < roles.ranger.count) {
+                const newName = `Ranger_${Game.time}`;
+                if (spawn.spawnCreep(roles.ranger.body, newName, { memory: { role: 'ranger', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
+                    console.log(`Spawning new ranger: ${newName}`);
+                    return;
                 }
-                if (counts.ranger < roles.ranger.count) {
-                    const newName = `Ranger_${Game.time}`;
-                    if (spawn.spawnCreep(roles.ranger.body, newName, { memory: { role: 'ranger', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                        console.log(`Spawning new ranger: ${newName}`);
-                        return;
-                    }
+            }
+            if (counts.healer < roles.healer.count) {
+                const newName = `Healer_${Game.time}`;
+                if (spawn.spawnCreep(roles.healer.body, newName, { memory: { role: 'healer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
+                    console.log(`Spawning new healer: ${newName}`);
+                    return;
                 }
-                if (counts.healer < roles.healer.count) {
-                    const newName = `Healer_${Game.time}`;
-                    if (spawn.spawnCreep(roles.healer.body, newName, { memory: { role: 'healer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                        console.log(`Spawning new healer: ${newName}`);
-                        return;
-                    }
-                }
-                if (counts.claimer < roles.claimer.count) {
-                    const newName = `Claimer_${Game.time}`;
-                    if (spawn.spawnCreep(roles.claimer.body, newName, { memory: { role: 'claimer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                        console.log(`Spawning new claimer: ${newName}`);
-                        return;
-                    }
+            }
+            if (counts.claimer < roles.claimer.count) {
+                const newName = `Claimer_${Game.time}`;
+                if (spawn.spawnCreep(roles.claimer.body, newName, { memory: { role: 'claimer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
+                    console.log(`Spawning new claimer: ${newName}`);
+                    return;
                 }
             }
         }
+    }
 
     // 防御：当房间发现敌对 creep 时，生成 Defender 保卫房间
     if (room.find(FIND_HOSTILE_CREEPS).length > 0) {
