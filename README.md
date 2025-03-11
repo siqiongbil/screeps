@@ -1,4 +1,4 @@
-# Screeps AI Bot
+# Screeps
 
 ## 项目简介
 本项目是一个完整的 Screeps ，实现了自动化房间管理、Creep 角色分工、入侵与防御等功能。
