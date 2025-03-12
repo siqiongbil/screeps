@@ -51,6 +51,14 @@ module.exports.scheduleConstruction = function (room) {
     const roadSites = constructionSites.filter(s => s.structureType === STRUCTURE_ROAD);
     const extractorSites = constructionSites.filter(s => s.structureType === STRUCTURE_EXTRACTOR);
 
+    // 检查并重新创建被摧毁或损毁的建筑
+    checkAndRecreateStructures(room, STRUCTURE_STORAGE, storage, storageSites, createStorage);
+    checkAndRecreateStructures(room, STRUCTURE_LINK, links, linkSites, createLinks);
+    checkAndRecreateStructures(room, STRUCTURE_EXTRACTOR, extractors, extractorSites, createExtractor, minerals);
+    checkAndRecreateStructures(room, STRUCTURE_TOWER, towers, towerSites, createTowers, 1);
+    checkAndRecreateStructures(room, STRUCTURE_LAB, labs, labSites, createLabs, 3);
+    checkAndRecreateStructures(room, STRUCTURE_TERMINAL, terminals, terminalSites, createTerminal);
+
     // 根据控制器等级动态调整建筑的建造顺序和数量
     switch (controllerLevel) {
         case 1:
@@ -166,9 +174,9 @@ function createExtensions(room, maxExtensions) {
 
     if (totalExtensions < maxExtensions) {
         for (let i = totalExtensions; i < maxExtensions; i++) {
-            const pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 固定位置，移除随机偏移
-            if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_EXTENSION) &&
-                !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_EXTENSION)) {
+            let pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 固定位置，移除随机偏移
+            pos = findAvailablePosition(room, pos, STRUCTURE_EXTENSION);
+            if (pos) {
                 const result = room.createConstructionSite(pos, STRUCTURE_EXTENSION);
                 if (result === OK) {
                     console.log(`Extension construction site created at ${pos}`);
@@ -186,9 +194,9 @@ function createTowers(room, maxTowers) {
 
     if (totalTowers < maxTowers) {
         for (let i = totalTowers; i < maxTowers; i++) {
-            const pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
-            if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_TOWER) &&
-                !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_TOWER)) {
+            let pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
+            pos = findAvailablePosition(room, pos, STRUCTURE_TOWER);
+            if (pos) {
                 const result = room.createConstructionSite(pos, STRUCTURE_TOWER);
                 if (result === OK) {
                     console.log(`Tower construction site created at ${pos}`);
@@ -204,9 +212,9 @@ function createStorage(room) {
     const currentStorageSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE });
 
     if (currentStorages.length === 0 && currentStorageSites.length === 0) {
-        const pos = new RoomPosition(25, 25, room.name); // 可以根据需要调整位置
-        if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_STORAGE) &&
-            !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_STORAGE)) {
+        let pos = new RoomPosition(25, 25, room.name); // 可以根据需要调整位置
+        pos = findAvailablePosition(room, pos, STRUCTURE_STORAGE);
+        if (pos) {
             const result = room.createConstructionSite(pos, STRUCTURE_STORAGE);
             if (result === OK) {
                 console.log(`Storage construction site created at ${pos}`);
@@ -223,9 +231,9 @@ function createLinks(room, maxLinks) {
 
     if (totalLinks < maxLinks) {
         for (let i = totalLinks; i < maxLinks; i++) {
-            const pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
-            if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_LINK) &&
-                !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_LINK)) {
+            let pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
+            pos = findAvailablePosition(room, pos, STRUCTURE_LINK);
+            if (pos) {
                 const result = room.createConstructionSite(pos, STRUCTURE_LINK);
                 if (result === OK) {
                     console.log(`Link construction site created at ${pos}`);
@@ -242,11 +250,12 @@ function createExtractor(room, minerals) {
 
     if (minerals.length > 0 && currentExtractors.length === 0 && currentExtractorSites.length === 0) {
         const mineral = minerals[0];
-        if (!room.lookForAt(LOOK_STRUCTURES, mineral.pos).some(s => s.structureType === STRUCTURE_EXTRACTOR) &&
-            !room.lookForAt(LOOK_CONSTRUCTION_SITES, mineral.pos).some(s => s.structureType === STRUCTURE_EXTRACTOR)) {
-            const result = room.createConstructionSite(mineral.pos, STRUCTURE_EXTRACTOR);
+        let pos = mineral.pos;
+        pos = findAvailablePosition(room, pos, STRUCTURE_EXTRACTOR);
+        if (pos) {
+            const result = room.createConstructionSite(pos, STRUCTURE_EXTRACTOR);
             if (result === OK) {
-                console.log(`Extractor construction site created at ${mineral.pos}`);
+                console.log(`Extractor construction site created at ${pos}`);
             }
         }
     }
@@ -260,9 +269,9 @@ function createLabs(room, maxLabs) {
 
     if (totalLabs < maxLabs) {
         for (let i = totalLabs; i < maxLabs; i++) {
-            const pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
-            if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_LAB) &&
-                !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_LAB)) {
+            let pos = room.getPositionAt(25 + i % 5, 25 + Math.floor(i / 5)); // 可以根据需要调整位置
+            pos = findAvailablePosition(room, pos, STRUCTURE_LAB);
+            if (pos) {
                 const result = room.createConstructionSite(pos, STRUCTURE_LAB);
                 if (result === OK) {
                     console.log(`Lab construction site created at ${pos}`);
@@ -278,13 +287,117 @@ function createTerminal(room) {
     const currentTerminalSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TERMINAL });
 
     if (currentTerminals.length === 0 && currentTerminalSites.length === 0) {
-        const pos = new RoomPosition(25, 26, room.name); // 可以根据需要调整位置
-        if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === STRUCTURE_TERMINAL) &&
-            !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === STRUCTURE_TERMINAL)) {
+        let pos = new RoomPosition(25, 26, room.name); // 可以根据需要调整位置
+        pos = findAvailablePosition(room, pos, STRUCTURE_TERMINAL);
+        if (pos) {
             const result = room.createConstructionSite(pos, STRUCTURE_TERMINAL);
             if (result === OK) {
                 console.log(`Terminal construction site created at ${pos}`);
             }
         }
+    }
+}
+
+// 查找可用位置
+function findAvailablePosition(room, initialPos, structureType) {
+    const offsets = [
+        { x: 0, y: 0 },
+        { x: -1, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: -1 },
+        { x: 0, y: 1 },
+        { x: -1, y: -1 },
+        { x: -1, y: 1 },
+        { x: 1, y: -1 },
+        { x: 1, y: 1 },
+        // 可以继续添加更多偏移量
+    ];
+
+    for (const offset of offsets) {
+        const pos = new RoomPosition(initialPos.x + offset.x, initialPos.y + offset.y, room.name);
+        if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === structureType) &&
+            !room.lookForAt(LOOK_CONSTRUCTION_SITES, pos).some(s => s.structureType === structureType) &&
+            room.lookForAt(LOOK_TERRAIN, pos)[0].terrain !== 'wall'
+            ) {
+            return pos;
+        }
+    }
+
+    return null; // 如果没有找到可用位置，返回 null
+}
+
+// 检查并重新创建被摧毁或损毁的建筑
+function checkAndRecreateStructures(room, structureType, structures, constructionSites, createFunction, ...args) {
+    const maxCount = getMaxCountForStructure(structureType, room.controller.level);
+    const currentCount = structures.length + constructionSites.length;
+
+    if (currentCount < maxCount) {
+        createFunction(room, ...args);
+    }
+}
+
+// 获取每种建筑在不同控制器等级下的最大数量
+function getMaxCountForStructure(structureType, controllerLevel) {
+    switch (structureType) {
+        case STRUCTURE_STORAGE:
+            return 1;
+        case STRUCTURE_LINK:
+            return getMaxLinksForControllerLevel(controllerLevel);
+        case STRUCTURE_EXTRACTOR:
+            return 1;
+        case STRUCTURE_TOWER:
+            return getMaxTowersForControllerLevel(controllerLevel);
+        case STRUCTURE_LAB:
+            return getMaxLabsForControllerLevel(controllerLevel);
+        case STRUCTURE_TERMINAL:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+// 获取控制器等级对应的最大 Link 数量
+function getMaxLinksForControllerLevel(controllerLevel) {
+    switch (controllerLevel) {
+        case 6:
+            return 3;
+        case 7:
+            return 4;
+        case 8:
+            return 6;
+        default:
+            return 6;
+    }
+}
+
+// 获取控制器等级对应的最大 Tower 数量
+function getMaxTowersForControllerLevel(controllerLevel) {
+    switch (controllerLevel) {
+        case 3:
+            return 1;
+        case 4:
+            return 3;
+        case 5:
+            return 5;
+        case 6:
+            return 6;
+        case 7:
+            return 8;
+        case 8:
+            return 10;
+        default:
+            return 10;
+    }
+}
+
+// 获取控制器等级对应的最大 Lab 数量
+function getMaxLabsForControllerLevel(controllerLevel) {
+    switch (controllerLevel) {
+        case 7:
+            return 3;
+        case 8:
+            return 6;
+        default:
+            return 10;
     }
 }

@@ -36,4 +36,4 @@ module.exports.run = function (creep) {
             creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });
         }
     }
-};
+};  

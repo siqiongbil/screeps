@@ -218,7 +218,7 @@ module.exports.spawnCreeps = function (room) {
     }
 
     // 优先孵化建造者，确保能够建造 Storage 和 Extension，但仅在采集者数量足够时
-    if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 200 && counts.builder < roles.builder.count) {
+    if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 500 && counts.builder < roles.builder.count) {
         const newName = `Builder_${Game.time}`;
         if (spawn.spawnCreep(roles.builder.body, newName, { memory: { role: 'builder', homeRoom: spawn.room.name } }) === OK) {
             console.log(`Spawning new builder: ${newName}`);
