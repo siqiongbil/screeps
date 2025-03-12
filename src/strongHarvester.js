@@ -1,52 +1,53 @@
 // strongHarvester.js
 module.exports.run = function (creep) {
     if (creep.store.getFreeCapacity() > 0) {
-        // 优先从 Storage 获取能量
-        const storage = creep.room.storage;
-        if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-            if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffaa00' } });
+        // 查找最近的 Source 进行采集
+        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+        if (source) {
+            if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
             return;
         }
-
-        // 其次从 Spawn 获取能量
-        const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-            filter: structure =>
-                (structure.structureType === STRUCTURE_STORAGE ||
-                 structure.structureType === STRUCTURE_SPAWN) &&
-                structure.store && structure.store[RESOURCE_ENERGY] > 0 &&
-                structure.room.name === creep.room.name
-        });
-        if (target) {
-            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
-            }
-        }
     } else {
-        // 查找最近的 Extension 或 Spawn 存放能量
-        const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+        // 查找最近的 Storage 存放能量
+        const storage = creep.pos.findClosestByPath(FIND_STRUCTURES, {
             filter: structure =>
-                (structure.structureType === STRUCTURE_EXTENSION ||
-                 structure.structureType === STRUCTURE_SPAWN) &&
+                structure.structureType === STRUCTURE_STORAGE &&
                 structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
                 structure.room.name === creep.room.name
         });
-        if (target) {
-            if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+        if (storage) {
+            if (creep.transfer(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffffff' } });
             }
             return;
         }
 
-        // 如果当前房间不是主房间，则将能量送回主房间
-        if (creep.room.name !== creep.memory.homeRoom) {
-            const mainRoomStorage = Game.rooms[creep.memory.homeRoom].storage;
-            if (mainRoomStorage && mainRoomStorage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-                if (creep.transfer(mainRoomStorage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(mainRoomStorage, { visualizePathStyle: { stroke: '#ffffff' } });
-                }
-                return;
+        // 查找最近的 Extension 存放能量
+        const extensions = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_EXTENSION &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
+                structure.room.name === creep.room.name
+        });
+        if (extensions) {
+            if (creep.transfer(extensions, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(extensions, { visualizePathStyle: { stroke: '#ffffff' } });
+            }
+            return;
+        }
+
+        // 查找最近的 Spawn 存放能量
+        const spawn = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_SPAWN &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
+                structure.room.name === creep.room.name
+        });
+        if (spawn) {
+            if (creep.transfer(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffffff' } });
             }
         }
     }

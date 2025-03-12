@@ -61,3 +61,51 @@ module.exports.logInvasionTarget = function (creep, targetRoomName) {
     }
     return true;
 };
+
+/**
+ * 确保 creep 有足够的能量
+ * @param {Creep} creep - 需要检查的 creep 对象
+ * @param {number} energyThreshold - 能量阈值
+ * @returns {boolean} 如果 creep 有足够的能量则返回 true，否则返回 false
+ */
+module.exports.ensureEnergy = function (creep, energyThreshold) {
+    if (creep.store.getFreeCapacity() > 0 && creep.store[RESOURCE_ENERGY] < energyThreshold && creep.room.energyAvailable > 300) {
+        // 优先从 Storage 获取能量
+        const storage = creep.room.storage;
+        if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) >= 300) {
+            if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffaa00' } });
+            }
+            return false;
+        }
+
+        // 如果 Storage 不足，则从 Extension 获取能量
+        const extensions = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getUsedCapacity(RESOURCE_ENERGY) >= 50
+        });
+        if (extensions.length > 0) {
+            const target = creep.pos.findClosestByPath(extensions);
+            if (target) {
+                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                }
+                return false;
+            }
+        }
+
+        // 如果 Extension 不足，则从 Spawn 获取能量
+        const spawn = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: structure =>
+                structure.structureType === STRUCTURE_SPAWN &&
+                structure.store && structure.store[RESOURCE_ENERGY] >= 300 &&
+                structure.room.name === creep.room.name
+        })[0];
+        if (spawn) {
+            if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+            }
+            return false;
+        }
+    }
+    return true;
+};

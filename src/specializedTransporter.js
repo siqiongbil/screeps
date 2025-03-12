@@ -1,6 +1,15 @@
 // roles/specializedTransporter.js
 module.exports.run = function (creep) {
     if (creep.store.getFreeCapacity() > 0) {
+        // 查找最近的掉落资源
+        const droppedResources = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES);
+        if (droppedResources) {
+            if (creep.pickup(droppedResources) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(droppedResources, { visualizePathStyle: { stroke: '#ffaa00' } });
+            }
+            return;
+        }
+
         // 查找最近的专精采集者
         const target = creep.pos.findClosestByPath(FIND_MY_CREEPS, {
             filter: c => c.memory.role === 'specializedHarvester' && c.store.getUsedCapacity() > 0
@@ -26,9 +35,9 @@ module.exports.run = function (creep) {
         // 若 Storage 已满，则将能量传送到本房间内需要能量的建筑
         const target = creep.pos.findClosestByPath(FIND_MY_STRUCTURES, {
             filter: structure =>
-                (structure.structureType === STRUCTURE_SPAWN ||
+                (structure.structureType === STRUCTURE_STORAGE ||
                  structure.structureType === STRUCTURE_EXTENSION ||
-                 structure.structureType === STRUCTURE_TOWER) &&
+                 structure.structureType === STRUCTURE_SPAWN) &&
                 structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
                 structure.room.name === creep.room.name
         });
