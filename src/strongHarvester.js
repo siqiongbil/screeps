@@ -2,7 +2,32 @@
 module.exports.run = function (creep) {
     if (creep.store.getFreeCapacity() > 0) {
         // 查找最近的 Source 进行采集
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE);
+        const sources = creep.room.find(FIND_SOURCES_ACTIVE);
+        let source = creep.memory.source ? Game.getObjectById(creep.memory.source) : null;
+
+        if (!source || source.energy === 0) {
+            // 如果当前 source 无效或没有能量，选择新的 source
+            source = creep.pos.findClosestByPath(sources);
+            creep.memory.source = source ? source.id : null;
+        } else {
+            // 检查当前 source 是否有空闲的开采位置
+            const harvesters = source.pos.findInRange(FIND_MY_CREEPS, 1, {
+                filter: c => c.memory.role === 'strongHarvester'
+            });
+            if (harvesters.length >= source.energyCapacity / 300) { // 假设每个 source 最多支持 3 个 strongHarvester
+                // 当前 source 没有空闲的开采位置，选择新的 source
+                source = creep.pos.findClosestByPath(sources, {
+                    filter: s => {
+                        const sHarvesters = s.pos.findInRange(FIND_MY_CREEPS, 1, {
+                            filter: c => c.memory.role === 'strongHarvester'
+                        });
+                        return sHarvesters.length < s.energyCapacity / 300;
+                    }
+                });
+                creep.memory.source = source ? source.id : null;
+            }
+        }
+
         if (source) {
             if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });

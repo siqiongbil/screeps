@@ -363,7 +363,7 @@ module.exports.spawnCreeps = function (room) {
                 const newName = `Claimer_${Game.time}`;
                 if (spawn.spawnCreep(roles.claimer.body, newName, { memory: { role: 'claimer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
                     console.log(`Spawning new claimer: ${newName}`);
-                    return;
+                    return; 
                 }
             }
         }
