@@ -41,6 +41,11 @@ module.exports.run = function (creep) {
             // 这里简单地返回控制器附近待命
             creep.moveTo(creep.room.controller);
         }
+        // 在开始入侵时打印入侵目标
+        const utils = require('./utils');
+        if (creep.memory.invasionTarget) {
+            utils.logInvasionTarget(creep, creep.memory.invasionTarget);
+        }
     } else {
         console.log(`Room ${creep.room.name} does not have a controller.`);
     }

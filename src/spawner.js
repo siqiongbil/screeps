@@ -16,7 +16,9 @@ const roles = {
     defender: { body: [TOUGH, MOVE, ATTACK, ATTACK], count: 2 },
     mineralHarvester: { body: [WORK, WORK, CARRY, MOVE], count: 1 },
     linkManager: { body: [CARRY, MOVE], count: 1 }, // 新增 LinkManager 角色
-    transporter: { body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE], count: 1 } // 新增资源运送者角色
+    transporter: { body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE], count: 1 }, // 新增资源运送者角色
+    specializedHarvester: { body: [WORK, WORK, WORK, WORK, WORK, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE], count: 2 }, // 专精采集者
+    specializedTransporter: { body: [CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE], count: 2 } // 专精运送者
 };
 
 module.exports.spawnCreeps = function (room) {
@@ -39,7 +41,9 @@ module.exports.spawnCreeps = function (room) {
         defender: _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name).length,
         mineralHarvester: _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.room.name === room.name).length,
         linkManager: _.filter(Game.creeps, c => c.memory.role === 'linkManager' && c.room.name === room.name).length, // 新增 LinkManager 角色
-        transporter: _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length // 新增资源运送者角色
+        transporter: _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length, // 新增资源运送者角色
+        specializedHarvester: _.filter(Game.creeps, c => c.memory.role === 'specializedHarvester' && c.room.name === room.name).length, // 专精采集者
+        specializedTransporter: _.filter(Game.creeps, c => c.memory.role === 'specializedTransporter' && c.room.name === room.name).length // 专精运送者
     };
 
     // 检查 Storage 状态
@@ -79,6 +83,8 @@ module.exports.spawnCreeps = function (room) {
             roles.ranger.count = 2;
             roles.healer.count = 1;
             roles.strongHarvester.count = 2; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         case 4:
             roles.harvester.count = 2;
@@ -91,6 +97,8 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 2;
             roles.mineralHarvester.count = 1;
             roles.strongHarvester.count = 3; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         case 5:
             roles.harvester.count = 2;
@@ -104,6 +112,8 @@ module.exports.spawnCreeps = function (room) {
             roles.mineralHarvester.count = 2;
             roles.linkManager.count = 1;
             roles.strongHarvester.count = 4; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         case 6:
             roles.harvester.count = 2;
@@ -117,6 +127,8 @@ module.exports.spawnCreeps = function (room) {
             roles.mineralHarvester.count = 3;
             roles.linkManager.count = 2;
             roles.strongHarvester.count = 5; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         case 7:
             roles.harvester.count = 2;
@@ -130,6 +142,8 @@ module.exports.spawnCreeps = function (room) {
             roles.mineralHarvester.count = 4;
             roles.linkManager.count = 3;
             roles.strongHarvester.count = 6; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         case 8:
             roles.harvester.count = 2;
@@ -143,6 +157,8 @@ module.exports.spawnCreeps = function (room) {
             roles.mineralHarvester.count = 5;
             roles.linkManager.count = 4;
             roles.strongHarvester.count = 7; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
         default:
             roles.harvester.count = 2;
@@ -156,6 +172,8 @@ module.exports.spawnCreeps = function (room) {
             roles.mineralHarvester.count = 6;
             roles.linkManager.count = 5;
             roles.strongHarvester.count = 8; // 增加 strongHarvester 的数量
+            roles.specializedHarvester.count = 2; // 新增专精采集者
+            roles.specializedTransporter.count = 2; // 新增专精运送者
             break;
     }
 
@@ -163,6 +181,29 @@ module.exports.spawnCreeps = function (room) {
     if (Game.cpu.getUsed() > Game.cpu.tickLimit * 0.9) {
         console.log(`CPU usage is high: ${Game.cpu.getUsed()}/${Game.cpu.tickLimit}`);
         return;
+    }
+
+    // 检查是否有低资源房间且没有creep在工作
+    let lowResourceRoom = null;
+    for (const roomName in Game.rooms) {
+        const room = Game.rooms[roomName];
+        if (room.controller && room.controller.my) {
+            const storage = room.storage;
+            const storageEnergy = storage ? storage.store.getUsedCapacity(RESOURCE_ENERGY) : 0;
+            if (storageEnergy < 500 && _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length === 0) {
+                lowResourceRoom = room;
+                break;
+            }
+        }
+    }
+
+    // 如果有低资源房间且没有creep在工作，则优先生成普通采集者
+    if (lowResourceRoom) {
+        const newName = `Harvester_${Game.time}`;
+        if (spawn.spawnCreep(roles.harvester.body, newName, { memory: { role: 'harvester', homeRoom: spawn.room.name } }) === OK) {
+            console.log(`Spawning new harvester for low resource room ${lowResourceRoom.name}: ${newName}`);
+            return;
+        }
     }
 
     // 经济基础：保证足够的采集者和升级者
@@ -173,6 +214,25 @@ module.exports.spawnCreeps = function (room) {
             return;
         }
     }
+
+    // 生成专精采集者
+    if (counts.specializedHarvester < roles.specializedHarvester.count && roomEnergyAvailable >= 1300) {
+        const newName = `SpecializedHarvester_${Game.time}`;
+        if (spawn.spawnCreep(roles.specializedHarvester.body, newName, { memory: { role: 'specializedHarvester', homeRoom: spawn.room.name } }) === OK) {
+            console.log(`Spawning new specialized harvester: ${newName}`);
+            return;
+        }
+    }
+
+    // 生成专精运送者
+    if (counts.specializedTransporter < roles.specializedTransporter.count && roomEnergyAvailable >= 1300) {
+        const newName = `SpecializedTransporter_${Game.time}`;
+        if (spawn.spawnCreep(roles.specializedTransporter.body, newName, { memory: { role: 'specializedTransporter', homeRoom: spawn.room.name } }) === OK) {
+            console.log(`Spawning new specialized transporter: ${newName}`);
+            return;
+        }
+    }
+
     if (counts.upgrader < roles.upgrader.count && roomEnergyAvailable >= 300) {
         const newName = `Upgrader_${Game.time}`;
         if (spawn.spawnCreep(roles.upgrader.body, newName, { memory: { role: 'upgrader', homeRoom: spawn.room.name } }) === OK) {

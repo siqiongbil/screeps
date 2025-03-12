@@ -51,3 +51,13 @@ module.exports.findClosestCreepToPickup = function (pos) {
     }
     return null;
 };
+
+// 新增函数：打印入侵目标
+module.exports.logInvasionTarget = function (creep, targetRoomName) {
+    if(creep){
+        console.log(`Creep ${creep.name} is targeting room ${targetRoomName} for invasion.`);
+        return false;
+
+    }
+    return true;
+};

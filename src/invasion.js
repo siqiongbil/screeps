@@ -8,11 +8,15 @@ module.exports.chooseInvasionTarget = function (room) {
         if (targetRoom && targetRoom.controller && !targetRoom.controller.my) {
             // 优先选择无主房间
             if (!targetRoom.controller.owner) {
+                const utils = require('./utils');
+                utils.logInvasionTarget(room.find(FIND_MY_CREEPS, { filter: c => c.memory.invasionTarget === targetRoomName })[0], targetRoomName);
                 return targetRoomName;
             }
         }
         // 如果目标房间尚未观察到，可能为空房或低活跃区域，也作为候选
         if (!targetRoom) {
+            const utils = require('./utils');
+            utils.logInvasionTarget(room.find(FIND_MY_CREEPS, { filter: c => c.memory.invasionTarget === targetRoomName })[0], targetRoomName);
             return targetRoomName;
         }
     }

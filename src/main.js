@@ -10,6 +10,7 @@ const formation = require('./formation'); // 阵型管理模块
 
 // 导入各角色模块
 const roleHarvester = require('./harvester');
+
 const roleUpgrader = require('./upgrader');
 const roleBuilder = require('./builder');
 const roleRepairer = require('./repairer');
@@ -22,6 +23,8 @@ const roleHealer = require('./healer');             // 入侵角色
 const roleLinkManager = require('./linkManager');   // Link 管理角色
 const roleStrongHarvester = require('./strongHarvester'); // 加强版采集者
 const roleTransporter = require('./transporter');   // 新增资源运送者角色
+const roleSpecializedHarvester = require('./specializedHarvester'); // 专精采集者
+const roleSpecializedTransporter = require('./specializedTransporter'); // 专精运送者
 
 module.exports.loop = function () {
     // 内存清理：删除所有已死亡 creep 的内存数据
@@ -86,59 +89,66 @@ module.exports.loop = function () {
         }
     }
 
-    // 遍历所有 creep，根据其 memory.role 执行对应行为逻辑
-    for (const name in Game.creeps) {
-        const creep = Game.creeps[name];
-        if (creep.room.controller && creep.room.controller.my) {
-            switch (creep.memory.role) {
-                case 'harvester':
-                    roleHarvester.run(creep);
-                    break;
-                case 'upgrader':
-                    roleUpgrader.run(creep);
-                    break;
-                case 'builder':
-                    roleBuilder.run(creep);
-                    break;
-                case 'repairer':
-                    roleRepairer.run(creep);
-                    break;
-                case 'soldier':
-                    roleSoldier.run(creep);
-                    break;
-                case 'claimer':
-                    roleClaimer.run(creep);
-                    break;
-                case 'mineralHarvester':
-                    roleMineralHarvester.run(creep);
-                    break;
-                case 'defender':
-                    roleDefender.run(creep);
-                    break;
-                case 'ranger':
-                    roleRanger.run(creep);
-                    break;
-                case 'healer':
-                    roleHealer.run(creep);
-                    break;
-                case 'linkManager':
-                    roleLinkManager.run(creep);
-                    break;
-                case 'strongHarvester':
-                    roleStrongHarvester.run(creep);
-                    break;
-                case 'transporter':
-                    roleTransporter.run(creep); // 新增资源运送者角色
-                    break;
-                default:
-                    // 默认行为：升级当前房间控制器
-                    roleUpgrader.run(creep);
-                    break;
+     // 遍历所有 creep，根据其 memory.role 执行对应行为逻辑
+        for (const name in Game.creeps) {
+            const creep = Game.creeps[name];
+            if (creep.room.controller && creep.room.controller.my) {
+                switch (creep.memory.role) {
+                    // 删除原有的 harvester 角色
+                    case 'harvester':
+                        roleHarvester.run(creep);
+                        break;
+                    case 'upgrader':
+                        roleUpgrader.run(creep);
+                        break;
+                    case 'builder':
+                        roleBuilder.run(creep);
+                        break;
+                    case 'repairer':
+                        roleRepairer.run(creep);
+                        break;
+                    case 'soldier':
+                        roleSoldier.run(creep);
+                        break;
+                    case 'claimer':
+                        roleClaimer.run(creep);
+                        break;
+                    case 'mineralHarvester':
+                        roleMineralHarvester.run(creep);
+                        break;
+                    case 'defender':
+                        roleDefender.run(creep);
+                        break;
+                    case 'ranger':
+                        roleRanger.run(creep);
+                        break;
+                    case 'healer':
+                        roleHealer.run(creep);
+                        break;
+                    case 'linkManager':
+                        roleLinkManager.run(creep);
+                        break;
+                    case 'strongHarvester':
+                        roleStrongHarvester.run(creep);
+                        break;
+                    case 'transporter':
+                        roleTransporter.run(creep); // 新增资源运送者角色
+                        break;
+                    case 'specializedHarvester':
+                        roleSpecializedHarvester.run(creep); // 专精采集者
+                        break;
+                    case 'specializedTransporter':
+                        roleSpecializedTransporter.run(creep); // 专精运送者
+                        break;
+                    default:
+                        // 默认行为：升级当前房间控制器
+                        roleUpgrader.run(creep);
+                        break;
+                }
+            } else {
+                console.log(`Creep ${creep.name} is in a room without a controller or not owned by us.`);
             }
-        } else {
-            console.log(`Creep ${creep.name} is in a room without a controller or not owned by us.`);
         }
-    }
         // 遍历所有房间，处理所有控制器属于我的房间（包括新占领的房间）
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
