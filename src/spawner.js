@@ -56,21 +56,21 @@ module.exports.spawnCreeps = function (room) {
     // 根据控制器等级动态调整 creep 的生产数量
     switch (controllerLevel) {
         case 1:
-            roles.harvester.count = 3;
+            roles.harvester.count = 2;
             roles.upgrader.count = 2;
             roles.builder.count = 1;
-            roles.strongHarvester.count = 1; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 0; // 减少 strongHarvester 的数量
             break;
         case 2:
-            roles.harvester.count = 4;
+            roles.harvester.count = 3;
             roles.upgrader.count = 2;
             roles.builder.count = 2;
             roles.soldier.count = 2;
             roles.claimer.count = 1;
-            roles.strongHarvester.count = 2; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 1; // 增加 strongHarvester 的数量
             break;
         case 3:
-            roles.harvester.count = 3;
+            roles.harvester.count = 2;
             roles.upgrader.count = 3;
             roles.builder.count = 3;
             roles.repairer.count = 1;
@@ -78,7 +78,7 @@ module.exports.spawnCreeps = function (room) {
             roles.claimer.count = 1;
             roles.ranger.count = 2;
             roles.healer.count = 1;
-            roles.strongHarvester.count = 4; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 2; // 增加 strongHarvester 的数量
             break;
         case 4:
             roles.harvester.count = 2;
@@ -90,7 +90,7 @@ module.exports.spawnCreeps = function (room) {
             roles.ranger.count = 3;
             roles.healer.count = 2;
             roles.mineralHarvester.count = 1;
-            roles.strongHarvester.count = 4; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 3; // 增加 strongHarvester 的数量
             break;
         case 5:
             roles.harvester.count = 2;
@@ -103,7 +103,7 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 3;
             roles.mineralHarvester.count = 2;
             roles.linkManager.count = 1;
-            roles.strongHarvester.count = 5; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 4; // 增加 strongHarvester 的数量
             break;
         case 6:
             roles.harvester.count = 2;
@@ -116,7 +116,7 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 4;
             roles.mineralHarvester.count = 3;
             roles.linkManager.count = 2;
-            roles.strongHarvester.count = 6; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 5; // 增加 strongHarvester 的数量
             break;
         case 7:
             roles.harvester.count = 2;
@@ -129,7 +129,7 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 5;
             roles.mineralHarvester.count = 4;
             roles.linkManager.count = 3;
-            roles.strongHarvester.count = 7; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 6; // 增加 strongHarvester 的数量
             break;
         case 8:
             roles.harvester.count = 2;
@@ -142,7 +142,7 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 6;
             roles.mineralHarvester.count = 5;
             roles.linkManager.count = 4;
-            roles.strongHarvester.count = 8; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 7; // 增加 strongHarvester 的数量
             break;
         default:
             roles.harvester.count = 2;
@@ -155,7 +155,7 @@ module.exports.spawnCreeps = function (room) {
             roles.healer.count = 7;
             roles.mineralHarvester.count = 6;
             roles.linkManager.count = 5;
-            roles.strongHarvester.count = 9; // 新增 strongHarvester 的数量
+            roles.strongHarvester.count = 8; // 增加 strongHarvester 的数量
             break;
     }
 
@@ -166,14 +166,14 @@ module.exports.spawnCreeps = function (room) {
     }
 
     // 经济基础：保证足够的采集者和升级者
-    if (counts.harvester < roles.harvester.count) {
+    if (counts.harvester < roles.harvester.count && roomEnergyAvailable >= 300) {
         const newName = `Harvester_${Game.time}`;
         if (spawn.spawnCreep(roles.harvester.body, newName, { memory: { role: 'harvester', homeRoom: spawn.room.name } }) === OK) {
             console.log(`Spawning new harvester: ${newName}`);
             return;
         }
     }
-    if (counts.upgrader < roles.upgrader.count) {
+    if (counts.upgrader < roles.upgrader.count && roomEnergyAvailable >= 300) {
         const newName = `Upgrader_${Game.time}`;
         if (spawn.spawnCreep(roles.upgrader.body, newName, { memory: { role: 'upgrader', homeRoom: spawn.room.name } }) === OK) {
             console.log(`Spawning new upgrader: ${newName}`);
