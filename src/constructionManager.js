@@ -153,7 +153,7 @@ function createRoads(room, spawns, sources, controller) {
 
 // 创建路径
 function createPath(room, startPos, endPos, structureType) {
-    const path = startPos.findPathTo(endPos);
+    const path = startPos.findPathTo(endPos, { ignoreCreeps: true });
     path.forEach(step => {
         const pos = new RoomPosition(step.x, step.y, room.name);
         if (!room.lookForAt(LOOK_STRUCTURES, pos).some(s => s.structureType === structureType) &&
