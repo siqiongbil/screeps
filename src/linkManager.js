@@ -1,4 +1,4 @@
-// roles/linkManager.js
+// linkManager.js
 // LinkManager 角色：管理 Link 之间的能量传输
 const utils = require('./utils');
 

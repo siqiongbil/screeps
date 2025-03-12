@@ -7,27 +7,44 @@ module.exports.run = function (creep) {
     // 定义能量阈值
     const energyThreshold = 10; // 可以根据实际情况调整
 
+    // 检查当前房间的全局资源是否达到300以上
+    const roomEnergy = creep.room.storage ? creep.room.storage.store.getUsedCapacity(RESOURCE_ENERGY) : 0;
+    if (roomEnergy < 300) return;
+
     if (creep.store.getFreeCapacity() > 0 && creep.store[RESOURCE_ENERGY] < energyThreshold) {
-        // 优先从 Storage 获取能量
+        // 优先从 Extension 获取能量
+        const extensions = creep.room.find(FIND_MY_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getUsedCapacity(RESOURCE_ENERGY) > 300
+        });
+        if (extensions.length > 0) {
+            const target = creep.pos.findClosestByPath(extensions);
+            if (target) {
+                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                }
+                return;
+            }
+        }
+
+        // 如果 Extension 不足，则从 Storage 获取能量
         const storage = creep.room.storage;
-        if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
+        if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) > 300) {
             if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
             return;
         }
 
-        // 其次从 Spawn 获取能量
-        const target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+        // 如果 Storage 不足，则从 Spawn 获取能量
+        const spawn = creep.room.find(FIND_MY_STRUCTURES, {
             filter: structure =>
-                (structure.structureType === STRUCTURE_STORAGE ||
-                 structure.structureType === STRUCTURE_SPAWN) &&
-                structure.store && structure.store[RESOURCE_ENERGY] > 100 &&
+                structure.structureType === STRUCTURE_SPAWN &&
+                structure.store && structure.store[RESOURCE_ENERGY] > 300 &&
                 structure.room.name === creep.room.name
-        });
-        if (target) {
-            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+        })[0];
+        if (spawn) {
+            if (creep.withdraw(spawn, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
         }
     } else {

@@ -52,7 +52,6 @@ module.exports.spawnCreeps = function (room) {
 
     // 检查房间能量状态
     const roomEnergyAvailable = room.energyAvailable;
-    const roomEnergyCapacityAvailable = room.energyCapacityAvailable;
 
     // 获取房间控制器等级
     const controllerLevel = room.controller.level;
@@ -74,7 +73,7 @@ module.exports.spawnCreeps = function (room) {
             roles.strongHarvester.count = 1; // 增加 strongHarvester 的数量
             break;
         case 3:
-            roles.harvester.count = 2;
+            roles.harvester.count = 6;
             roles.upgrader.count = 3;
             roles.builder.count = 3;
             roles.repairer.count = 1;
@@ -215,6 +214,14 @@ module.exports.spawnCreeps = function (room) {
         }
     }
 
+    if (counts.upgrader < roles.upgrader.count && roomEnergyAvailable >= 300) {
+        const newName = `Upgrader_${Game.time}`;
+        if (spawn.spawnCreep(roles.upgrader.body, newName, { memory: { role: 'upgrader', homeRoom: spawn.room.name } }) === OK) {
+            console.log(`Spawning new upgrader: ${newName}`);
+            return;
+        }
+    }
+
     // 生成专精采集者
     if (counts.specializedHarvester < roles.specializedHarvester.count && roomEnergyAvailable >= 1300) {
         const newName = `SpecializedHarvester_${Game.time}`;
@@ -233,21 +240,13 @@ module.exports.spawnCreeps = function (room) {
         }
     }
 
-    if (counts.upgrader < roles.upgrader.count && roomEnergyAvailable >= 300) {
-        const newName = `Upgrader_${Game.time}`;
-        if (spawn.spawnCreep(roles.upgrader.body, newName, { memory: { role: 'upgrader', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new upgrader: ${newName}`);
-            return;
-        }
-    }
-
     // 检测周围是否有无主房间
     const targetRoomName = chooseInvasionTarget(room);
     if (targetRoomName) {
         const targetRoom = Game.rooms[targetRoomName];
         if (targetRoom && targetRoom.controller && !targetRoom.controller.owner) {
             // 控制器到达2级且资源大于200时，生产宣称者
-            if (room.controller.level >= 2 && room.energyAvailable >= 200) {
+            if (room.controller.level >= 2 && room.energyAvailable >= 300) {
                 const newName = `Claimer_${Game.time}`;
                 const body = [CLAIM, MOVE];
                 if (room.spawnCreep(body, newName, { memory: { role: 'claimer', invasionTarget: targetRoomName } }) === OK) {
@@ -266,16 +265,7 @@ module.exports.spawnCreeps = function (room) {
         }
     }
 
-    // 如果 Storage 未填满或未建造，优先孵化 Harvester
-    if (!storage || storageEnergy < storage.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
-        if (counts.harvester < roles.harvester.count * 2) { // 增加 Harvester 的数量
-            const newName = `Harvester_${Game.time}`;
-            if (spawn.spawnCreep(roles.harvester.body, newName, { memory: { role: 'harvester', homeRoom: spawn.room.name } }) === OK) {
-                console.log(`Spawning new harvester: ${newName}`);
-                return;
-            }
-        }
-    }
+
 
     // 优先孵化建造者，确保能够建造 Storage 和 Extension，但仅在采集者数量足够时
     if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 500 && counts.builder < roles.builder.count) {
@@ -287,7 +277,7 @@ module.exports.spawnCreeps = function (room) {
     }
 
     // 当能量充足时增加 Builder 和 Repairer
-    if (roomEnergyCapacityAvailable >= 500) {
+    if (roomEnergyAvailable >= 500) {
         if (counts.builder < roles.builder.count) {
             const newName = `Builder_${Game.time}`;
             if (spawn.spawnCreep(roles.builder.body, newName, { memory: { role: 'builder', homeRoom: spawn.room.name } }) === OK) {
