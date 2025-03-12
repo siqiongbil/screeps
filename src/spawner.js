@@ -73,7 +73,7 @@ module.exports.spawnCreeps = function (room) {
             roles.strongHarvester.count = 1; // 增加 strongHarvester 的数量
             break;
         case 3:
-            roles.harvester.count = 6;
+            roles.harvester.count = 3;
             roles.upgrader.count = 3;
             roles.builder.count = 3;
             roles.repairer.count = 1;

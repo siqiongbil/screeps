@@ -69,7 +69,7 @@ module.exports.logInvasionTarget = function (creep, targetRoomName) {
  * @returns {boolean} 如果 creep 有足够的能量则返回 true，否则返回 false
  */
 module.exports.ensureEnergy = function (creep, energyThreshold) {
-    if (creep.store.getFreeCapacity() > 0 && creep.store[RESOURCE_ENERGY] < energyThreshold && creep.room.energyAvailable > 300) {
+    if (creep.store.getFreeCapacity() > 0 && creep.store[RESOURCE_ENERGY] < energyThreshold && creep.room.energyAvailable > 500) {
         // 优先从 Storage 获取能量
         const storage = creep.room.storage;
         if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) >= 300) {
