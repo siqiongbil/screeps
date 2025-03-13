@@ -50,9 +50,12 @@ module.exports = {
 
         targets.forEach(target => {
             if(!targetMemory[target.id]) {
+                // 根据对象属性判断类型，而不是使用instanceof
+                const type = target.resourceType ? 'resource' : 
+                             target.creepId ? 'tombstone' : 'ruin';
+                
                 targetMemory[target.id] = {
-                    type: target instanceof Resource ? 'resource' : 
-                          target instanceof Tombstone ? 'tombstone' : 'ruin',
+                    type: type,
                     pos: target.pos,
                     lastSeen: Game.time
                 };
@@ -96,9 +99,39 @@ module.exports = {
 
         for(const targetId in targets) {
             const target = Game.getObjectById(targetId);
-            if(!target || 
-               (target.store && target.store.getUsedCapacity() === 0) ||
-               (target.amount && target.amount === 0)) {
+            if(!target) {
+                // 目标不存在，清理
+                if(collectors[targetId]) {
+                    const collector = Game.getObjectById(collectors[targetId]);
+                    if(collector) {
+                        delete collector.memory.cleaning;
+                    }
+                    delete collectors[targetId];
+                }
+                delete targets[targetId];
+                continue;
+            }
+            
+            // 检查资源是否已耗尽
+            let isEmpty = false;
+            
+            if(target.store) {
+                // 安全地检查存储是否为空
+                try {
+                    if(typeof target.store.getUsedCapacity === 'function') {
+                        isEmpty = target.store.getUsedCapacity() === 0;
+                    } else {
+                        // 旧版API兼容
+                        isEmpty = _.sum(target.store) === 0;
+                    }
+                } catch(e) {
+                    isEmpty = false;
+                }
+            } else if(target.amount) {
+                isEmpty = target.amount === 0;
+            }
+            
+            if(isEmpty) {
                 if(collectors[targetId]) {
                     const collector = Game.getObjectById(collectors[targetId]);
                     if(collector) {

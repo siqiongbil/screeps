@@ -48,12 +48,14 @@ Creep.prototype.collectResource = function(target) {
     if(!target) return false;
     
     // 根据目标类型执行不同的收集逻辑
-    if(target instanceof Resource) {
+    if(target.resourceType) {
+        // 掉落的资源
         if(this.pickup(target) === ERR_NOT_IN_RANGE) {
             this.moveTo(target, {visualizePathStyle: {stroke: '#ffaa00'}});
         }
         return true;
-    } else if(target instanceof Structure || target instanceof Tombstone || target instanceof Ruin) {
+    } else if(target.store) {
+        // 有存储的对象（结构、墓碑、废墟等）
         const resourceType = Object.keys(target.store).find(type => target.store[type] > 0);
         if(resourceType) {
             if(this.withdraw(target, resourceType) === ERR_NOT_IN_RANGE) {

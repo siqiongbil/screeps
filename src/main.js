@@ -222,24 +222,6 @@ module.exports.loop = function() {
                 if(creep.room.name != roomName) continue;
 
                 try {
-                    // 首先运行战斗系统
-                    battleSystem.run(room);
-                    
-                    // 如果房间不在高威胁状态下，运行其他系统
-                    if(!room.memory.threatLevel || room.memory.threatLevel < 3) {
-                        // 运行资源管理系统
-                        resourceManager.run(room);
-                        
-                        // 运行远征系统
-                        expedition.run(room);
-                        
-                        // 运行监控系统
-                        monitor.run();
-
-                        // 运行资源清理系统
-                        resourceCleaner.run(room);
-                    }
-                    
                     // 根据角色运行creep
                     if(creep.memory.role && roleMap[creep.memory.role]) {
                         try {

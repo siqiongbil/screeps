@@ -156,14 +156,47 @@ module.exports = {
             if(monitor.stats.gpl.length > 100) monitor.stats.gpl.shift();
 
             // 记录能量状态
-            const energyLevel = storage ? 
-                storage.store[RESOURCE_ENERGY] / storage.store.getCapacity(RESOURCE_ENERGY) : 0;
+            let energyLevel = 0;
+            if (storage) {
+                const energyAmount = storage.store[RESOURCE_ENERGY] || 0;
+                let storageCapacity = 0;
+                
+                // 尝试使用getCapacity方法，如果不存在则使用默认容量
+                try {
+                    storageCapacity = storage.store.getCapacity ? storage.store.getCapacity(RESOURCE_ENERGY) : 1000000;
+                } catch (e) {
+                    storageCapacity = 1000000; // 默认存储容量
+                }
+                
+                energyLevel = storageCapacity > 0 ? energyAmount / storageCapacity : 0;
+            }
             monitor.stats.energy.push(energyLevel);
             if(monitor.stats.energy.length > 100) monitor.stats.energy.shift();
 
             // 记录矿物状态
-            const mineralLevel = terminal ? 
-                terminal.store[RESOURCE_MINERAL] / terminal.store.getCapacity(RESOURCE_MINERAL) : 0;
+            let mineralLevel = 0;
+            if (terminal) {
+                let totalResources = 0;
+                let totalCapacity = 0;
+                
+                // 尝试使用getCapacity方法，如果不存在则使用默认容量
+                try {
+                    totalCapacity = terminal.store.getCapacity ? terminal.store.getCapacity() : 50000;
+                } catch (e) {
+                    totalCapacity = 50000; // 默认终端容量
+                }
+                
+                // 计算除能量外的所有资源
+                for (let resourceType in terminal.store) {
+                    if (resourceType !== RESOURCE_ENERGY) {
+                        totalResources += terminal.store[resourceType] || 0;
+                    }
+                }
+                
+                // 计算比率
+                mineralLevel = totalCapacity > 0 ? totalResources / totalCapacity : 0;
+            }
+            
             monitor.stats.minerals.push(mineralLevel);
             if(monitor.stats.minerals.length > 100) monitor.stats.minerals.shift();
 

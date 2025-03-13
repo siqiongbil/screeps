@@ -271,8 +271,21 @@ module.exports = {
         return room.storage || 
                room.terminal || 
                room.find(FIND_STRUCTURES, {
-                   filter: s => s.structureType === STRUCTURE_CONTAINER &&
-                               s.store.getFreeCapacity() > 0
+                   filter: s => {
+                       if (s.structureType !== STRUCTURE_CONTAINER) return false;
+                       
+                       // 安全地检查容量
+                       try {
+                           if (typeof s.store.getFreeCapacity === 'function') {
+                               return s.store.getFreeCapacity() > 0;
+                           } else {
+                               // 旧版API兼容
+                               return s.storeCapacity - _.sum(s.store) > 0;
+                           }
+                       } catch (e) {
+                           return false;
+                       }
+                   }
                })[0];
     }
 }; 
