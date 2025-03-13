@@ -1,391 +1,387 @@
-// spawner.js
-const chooseInvasionTarget = require('./invasion').chooseInvasionTarget;
-const canInvasionSucceed = require('./invasion').canInvasionSucceed;
-
-// 定义各角色的配置：包含生成所需的身体部件和目标数量
-const roles = {
-    harvester: { body: [WORK, CARRY, MOVE], count: 2 },
-    strongHarvester: { body: [WORK, WORK, WORK, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE], count: 1 }, // 强化版采集者
-    upgrader: { body: [WORK, CARRY, MOVE], count: 2 },
-    builder: { body: [WORK, CARRY, MOVE], count: 2 },
-    repairer: { body: [WORK, CARRY, MOVE], count: 1 },
-    soldier: { body: [TOUGH, MOVE, MOVE, ATTACK, ATTACK], count: 2 },
-    claimer: { body: [CLAIM, MOVE], count: 1 },
-    ranger: { body: [TOUGH, MOVE, RANGED_ATTACK, RANGED_ATTACK], count: 2 },
-    healer: { body: [MOVE, HEAL, HEAL], count: 1 },
-    defender: { body: [TOUGH, MOVE, ATTACK, ATTACK], count: 2 },
-    mineralHarvester: { body: [WORK, WORK, CARRY, MOVE], count: 1 },
-    linkManager: { body: [CARRY, MOVE], count: 1 }, // 新增 LinkManager 角色
-    transporter: { body: [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE], count: 1 }, // 新增资源运送者角色
-    specializedHarvester: { body: [WORK, WORK, WORK, WORK, WORK, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE], count: 2 }, // 专精采集者
-    specializedTransporter: { body: [CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE], count: 2 } // 专精运送者
+const PRIORITY_LEVELS = {
+    EMERGENCY: 0,    // 紧急情况（如没有采集者）
+    CRITICAL: 1,     // 关键角色（如carrier）
+    HIGH: 2,        // 高优先级（如upgrader）
+    MEDIUM: 3,      // 中等优先级（如builder）
+    LOW: 4          // 低优先级（如scout）
 };
 
-module.exports.spawnCreeps = function (room) {
-    // 仅对拥有 Spawn 的房间操作
-    const spawns = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_SPAWN });
-    if (spawns.length === 0) return;
-    const spawn = spawns[0];
-
-    // 统计当前房间各角色数量（只统计在本房间的 creep）
-    const counts = {
-        harvester: _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length,
-        strongHarvester: _.filter(Game.creeps, c => c.memory.role === 'strongHarvester' && c.room.name === room.name).length, // 强化版采集者
-        upgrader: _.filter(Game.creeps, c => c.memory.role === 'upgrader' && c.room.name === room.name).length,
-        builder: _.filter(Game.creeps, c => c.memory.role === 'builder' && c.room.name === room.name).length,
-        repairer: _.filter(Game.creeps, c => c.memory.role === 'repairer' && c.room.name === room.name).length,
-        soldier: _.filter(Game.creeps, c => c.memory.role === 'soldier' && c.room.name === room.name).length,
-        claimer: _.filter(Game.creeps, c => c.memory.role === 'claimer' && c.room.name === room.name).length,
-        ranger: _.filter(Game.creeps, c => c.memory.role === 'ranger' && c.room.name === room.name).length,
-        healer: _.filter(Game.creeps, c => c.memory.role === 'healer' && c.room.name === room.name).length,
-        defender: _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name).length,
-        mineralHarvester: _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.room.name === room.name).length,
-        linkManager: _.filter(Game.creeps, c => c.memory.role === 'linkManager' && c.room.name === room.name).length, // 新增 LinkManager 角色
-        transporter: _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length, // 新增资源运送者角色
-        specializedHarvester: _.filter(Game.creeps, c => c.memory.role === 'specializedHarvester' && c.room.name === room.name).length, // 专精采集者
-        specializedTransporter: _.filter(Game.creeps, c => c.memory.role === 'specializedTransporter' && c.room.name === room.name).length // 专精运送者
-    };
-
-    // 检查 Storage 状态
-    const storage = room.storage;
-    const storageEnergy = storage ? storage.store.getUsedCapacity(RESOURCE_ENERGY) : 0;
-
-    // 检查房间能量状态
-    const roomEnergyAvailable = room.energyAvailable;
-
-    // 获取房间控制器等级
-    const controllerLevel = room.controller.level;
-
-    // 根据控制器等级动态调整 creep 的生产数量
-    switch (controllerLevel) {
-        case 1:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 2;
-            roles.builder.count = 1;
-            roles.strongHarvester.count = 0; // 减少 strongHarvester 的数量
-            break;
-        case 2:
-            roles.harvester.count = 3;
-            roles.upgrader.count = 2;
-            roles.builder.count = 2;
-            roles.soldier.count = 2;
-            roles.claimer.count = 1;
-            roles.strongHarvester.count = 1; // 增加 strongHarvester 的数量
-            break;
-        case 3:
-            roles.harvester.count = 3;
-            roles.upgrader.count = 3;
-            roles.builder.count = 3;
-            roles.repairer.count = 1;
-            roles.soldier.count = 3;
-            roles.claimer.count = 1;
-            roles.ranger.count = 2;
-            roles.healer.count = 1;
-            roles.strongHarvester.count = 2; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        case 4:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 4;
-            roles.builder.count = 4;
-            roles.repairer.count = 2;
-            roles.soldier.count = 4;
-            roles.claimer.count = 1;
-            roles.ranger.count = 3;
-            roles.healer.count = 2;
-            roles.mineralHarvester.count = 1;
-            roles.strongHarvester.count = 3; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        case 5:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 5;
-            roles.builder.count = 5;
-            roles.repairer.count = 3;
-            roles.soldier.count = 5;
-            roles.claimer.count = 1;
-            roles.ranger.count = 4;
-            roles.healer.count = 3;
-            roles.mineralHarvester.count = 2;
-            roles.linkManager.count = 1;
-            roles.strongHarvester.count = 4; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        case 6:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 6;
-            roles.builder.count = 6;
-            roles.repairer.count = 4;
-            roles.soldier.count = 6;
-            roles.claimer.count = 1;
-            roles.ranger.count = 5;
-            roles.healer.count = 4;
-            roles.mineralHarvester.count = 3;
-            roles.linkManager.count = 2;
-            roles.strongHarvester.count = 5; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        case 7:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 7;
-            roles.builder.count = 7;
-            roles.repairer.count = 5;
-            roles.soldier.count = 7;
-            roles.claimer.count = 1;
-            roles.ranger.count = 6;
-            roles.healer.count = 5;
-            roles.mineralHarvester.count = 4;
-            roles.linkManager.count = 3;
-            roles.strongHarvester.count = 6; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        case 8:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 8;
-            roles.builder.count = 8;
-            roles.repairer.count = 6;
-            roles.soldier.count = 8;
-            roles.claimer.count = 1;
-            roles.ranger.count = 7;
-            roles.healer.count = 6;
-            roles.mineralHarvester.count = 5;
-            roles.linkManager.count = 4;
-            roles.strongHarvester.count = 7; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-        default:
-            roles.harvester.count = 2;
-            roles.upgrader.count = 9;
-            roles.builder.count = 9;
-            roles.repairer.count = 7;
-            roles.soldier.count = 9;
-            roles.claimer.count = 1;
-            roles.ranger.count = 8;
-            roles.healer.count = 7;
-            roles.mineralHarvester.count = 6;
-            roles.linkManager.count = 5;
-            roles.strongHarvester.count = 8; // 增加 strongHarvester 的数量
-            roles.specializedHarvester.count = 2; // 新增专精采集者
-            roles.specializedTransporter.count = 2; // 新增专精运送者
-            break;
-    }
-
-    // 检查 CPU 使用情况
-    if (Game.cpu.getUsed() > Game.cpu.tickLimit * 0.9) {
-        console.log(`CPU usage is high: ${Game.cpu.getUsed()}/${Game.cpu.tickLimit}`);
-        return;
-    }
-
-    // 检查是否有低资源房间且没有creep在工作
-    let lowResourceRoom = null;
-    for (const roomName in Game.rooms) {
-        const room = Game.rooms[roomName];
-        if (room.controller && room.controller.my) {
-            const storage = room.storage;
-            const storageEnergy = storage ? storage.store.getUsedCapacity(RESOURCE_ENERGY) : 0;
-            if (storageEnergy < 500 && _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length === 0) {
-                lowResourceRoom = room;
-                break;
-            }
-        }
-    }
-
-    // 如果有低资源房间且没有creep在工作，则优先生成普通采集者
-    if (lowResourceRoom) {
-        const newName = `Harvester_${Game.time}`;
-        if (spawn.spawnCreep(roles.harvester.body, newName, { memory: { role: 'harvester', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new harvester for low resource room ${lowResourceRoom.name}: ${newName}`);
-            return;
-        }
-    }
-
-    // 经济基础：保证足够的采集者和升级者
-    if (counts.harvester < roles.harvester.count && roomEnergyAvailable >= 300) {
-        const newName = `Harvester_${Game.time}`;
-        if (spawn.spawnCreep(roles.harvester.body, newName, { memory: { role: 'harvester', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new harvester: ${newName}`);
-            return;
-        }
-    }
-
-    if (counts.upgrader < roles.upgrader.count && roomEnergyAvailable >= 300) {
-        const newName = `Upgrader_${Game.time}`;
-        if (spawn.spawnCreep(roles.upgrader.body, newName, { memory: { role: 'upgrader', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new upgrader: ${newName}`);
-            return;
-        }
-    }
-
-    // 生成专精采集者
-    if (counts.specializedHarvester < roles.specializedHarvester.count && roomEnergyAvailable >= 1300) {
-        const newName = `SpecializedHarvester_${Game.time}`;
-        if (spawn.spawnCreep(roles.specializedHarvester.body, newName, { memory: { role: 'specializedHarvester', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new specialized harvester: ${newName}`);
-            return;
-        }
-    }
-
-    // 生成专精运送者
-    if (counts.specializedTransporter < roles.specializedTransporter.count && roomEnergyAvailable >= 1300) {
-        const newName = `SpecializedTransporter_${Game.time}`;
-        if (spawn.spawnCreep(roles.specializedTransporter.body, newName, { memory: { role: 'specializedTransporter', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new specialized transporter: ${newName}`);
-            return;
-        }
-    }
-
-    // 检测周围是否有无主房间
-    const targetRoomName = chooseInvasionTarget(room);
-    if (targetRoomName) {
-        const targetRoom = Game.rooms[targetRoomName];
-        if (targetRoom && targetRoom.controller && !targetRoom.controller.owner) {
-            // 控制器到达2级且资源大于200时，生产宣称者
-            if (room.controller.level >= 2 && room.energyAvailable >= 300) {
-                const newName = `Claimer_${Game.time}`;
-                const body = [CLAIM, MOVE];
-                if (room.spawnCreep(body, newName, { memory: { role: 'claimer', invasionTarget: targetRoomName } }) === OK) {
-                    console.log(`Spawning new claimer: ${newName} for room ${targetRoomName}`);
-                }
-            }
-        }
-    }
-
-    // 当能量大于等于 500 且普通采集者数量足够时，生成加强版采集者
-    if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 500 && counts.strongHarvester < roles.strongHarvester.count) {
-        const newName = `StrongHarvester_${Game.time}`;
-        if (spawn.spawnCreep(roles.strongHarvester.body, newName, { memory: { role: 'strongHarvester', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new strong harvester: ${newName}`);
-            return;
-        }
-    }
-
-
-
-    // 优先孵化建造者，确保能够建造 Storage 和 Extension，但仅在采集者数量足够时
-    if (counts.harvester >= roles.harvester.count && roomEnergyAvailable >= 500 && counts.builder < roles.builder.count) {
-        const newName = `Builder_${Game.time}`;
-        if (spawn.spawnCreep(roles.builder.body, newName, { memory: { role: 'builder', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new builder: ${newName}`);
-            return;
-        }
-    }
-
-    // 当能量充足时增加 Builder 和 Repairer
-    if (roomEnergyAvailable >= 500) {
-        if (counts.builder < roles.builder.count) {
-            const newName = `Builder_${Game.time}`;
-            if (spawn.spawnCreep(roles.builder.body, newName, { memory: { role: 'builder', homeRoom: spawn.room.name } }) === OK) {
-                console.log(`Spawning new builder: ${newName}`);
-                return;
-            }
-        }
-        if (counts.repairer < roles.repairer.count) {
-            const newName = `Repairer_${Game.time}`;
-            if (spawn.spawnCreep(roles.repairer.body, newName, { memory: { role: 'repairer', homeRoom: spawn.room.name } }) === OK) {
-                console.log(`Spawning new repairer: ${newName}`);
-                return;
-            }
-        }
-    }
-
-    // 矿物采集：当房间内有矿物且存在 Extractor 时，孵化矿物采集者
-    if (room.find(FIND_MINERALS).length > 0) {
-        const extractors = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR });
-        if (extractors.length > 0) {
-            if (counts.mineralHarvester < roles.mineralHarvester.count) {
-                const newName = `MineralHarvester_${Game.time}`;
-                if (spawn.spawnCreep(roles.mineralHarvester.body, newName, { memory: { role: 'mineralHarvester', homeRoom: spawn.room.name } }) === OK) {
-                    console.log(`Spawning new mineral harvester: ${newName}`);
-                    return;
-                }
-            }
-        }
-    }
-
-    // Link 管理：当房间内有 Link 时，孵化 LinkManager
-    if (room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK }).length >= 2) {
-        if (counts.linkManager < roles.linkManager.count) {
-            const newName = `LinkManager_${Game.time}`;
-            if (spawn.spawnCreep(roles.linkManager.body, newName, { memory: { role: 'linkManager', homeRoom: spawn.room.name } }) === OK) {
-                console.log(`Spawning new link manager: ${newName}`);
-                return;
-            }
-        }
-    }
-
-    // 入侵扩张：当房间经济稳定且控制器等级 ≥ 2 时启动入侵任务
-    if (roomEnergyAvailable > 500 && room.controller.level >= 2) {
-        // 如果还没有设置入侵目标，则选择一个相邻房间作为目标
-        if (!room.memory.invasionTarget) {
-            const invasionTarget = chooseInvasionTarget(room);
-            if (invasionTarget) {
-                room.memory.invasionTarget = invasionTarget;
-                console.log(`Room ${room.name} launching invasion: target ${invasionTarget}`);
-            }
-        }
-        // 若已有入侵目标，则生成入侵队伍：Soldier、Ranger、Healer、Claimer
-        if (room.memory.invasionTarget) {
-            // 判断入侵队伍是否能够成功
-            if (!canInvasionSucceed(room, room.memory.invasionTarget)) {
-                // 如果不能成功，则选择下一个房间再判断
-                room.memory.invasionTarget = null;
-                return;
-            }
-
-            if (counts.soldier < roles.soldier.count) {
-                const newName = `Soldier_${Game.time}`;
-                if (spawn.spawnCreep(roles.soldier.body, newName, { memory: { role: 'soldier', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                    console.log(`Spawning new soldier: ${newName}`);
-                    return;
-                }
-            }
-            if (counts.ranger < roles.ranger.count) {
-                const newName = `Ranger_${Game.time}`;
-                if (spawn.spawnCreep(roles.ranger.body, newName, { memory: { role: 'ranger', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                    console.log(`Spawning new ranger: ${newName}`);
-                    return;
-                }
-            }
-            if (counts.healer < roles.healer.count) {
-                const newName = `Healer_${Game.time}`;
-                if (spawn.spawnCreep(roles.healer.body, newName, { memory: { role: 'healer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                    console.log(`Spawning new healer: ${newName}`);
-                    return;
-                }
-            }
-            if (counts.claimer < roles.claimer.count) {
-                const newName = `Claimer_${Game.time}`;
-                if (spawn.spawnCreep(roles.claimer.body, newName, { memory: { role: 'claimer', invasionTarget: room.memory.invasionTarget, homeRoom: spawn.room.name } }) === OK) {
-                    console.log(`Spawning new claimer: ${newName}`);
-                    return; 
-                }
-            }
-        }
-    }
-
-    // 防御：当房间发现敌对 creep 时，生成 Defender 保卫房间
-    if (room.find(FIND_HOSTILE_CREEPS).length > 0) {
-        if (counts.defender < roles.defender.count) {
-            const newName = `Defender_${Game.time}`;
-            if (spawn.spawnCreep(roles.defender.body, newName, { memory: { role: 'defender', homeRoom: spawn.room.name } }) === OK) {
-                console.log(`Spawning new defender: ${newName}`);
-                return;
-            }
-        }
-    }
-
-    // 资源运送者：当房间生态稳定且不是主房间时，生成资源运送者
-    if (room.name !== Memory.mainRoom && room.memory.transportResourcesToMainRoom && counts.transporter < roles.transporter.count) {
-        const newName = `Transporter_${Game.time}`;
-        if (spawn.spawnCreep(roles.transporter.body, newName, { memory: { role: 'transporter', homeRoom: spawn.room.name } }) === OK) {
-            console.log(`Spawning new transporter: ${newName}`);
-            return;
-        }
-    }
+const ROLE_PRIORITIES = {
+    harvester: PRIORITY_LEVELS.EMERGENCY,
+    carrier: PRIORITY_LEVELS.CRITICAL,
+    upgrader: PRIORITY_LEVELS.HIGH,
+    builder: PRIORITY_LEVELS.MEDIUM,
+    repairer: PRIORITY_LEVELS.MEDIUM,
+    defender: PRIORITY_LEVELS.HIGH,
+    healer: PRIORITY_LEVELS.HIGH,
+    rangedAttacker: PRIORITY_LEVELS.HIGH,
+    scout: PRIORITY_LEVELS.LOW
 };
+
+class SpawnManager {
+    constructor() {
+        if (!Memory.spawns) {
+            Memory.spawns = {
+                queues: {},
+                stats: {}
+            };
+        }
+    }
+
+    run(room) {
+        if (!room.controller || !room.controller.my) return;
+
+        try {
+            // 初始化房间的孵化队列
+            this.initializeQueue(room);
+            
+            // 更新房间状态
+            this.updateRoomStatus(room);
+            
+            // 分析需求并添加到队列
+            this.analyzeAndQueueCreeps(room);
+            
+            // 处理孵化队列
+            this.processSpawnQueue(room);
+            
+            // 更新统计信息
+            if (Game.time % 100 === 0) {
+                this.updateStats(room);
+            }
+        } catch (error) {
+            console.log(`孵化管理器错误 ${room.name}: ${error}`);
+        }
+    }
+
+    initializeQueue(room) {
+        if (!Memory.spawns.queues[room.name]) {
+            Memory.spawns.queues[room.name] = {
+                queue: [],
+                lastCheck: Game.time,
+                emergencyMode: false
+            };
+        }
+    }
+
+    updateRoomStatus(room) {
+        const spawns = room.find(FIND_MY_SPAWNS);
+        const roomQueue = Memory.spawns.queues[room.name];
+        
+        // 检查是否处于紧急状态
+        const harvesters = _.filter(Game.creeps, creep => 
+            creep.memory.role === 'harvester' && creep.room.name === room.name
+        );
+        
+        roomQueue.emergencyMode = harvesters.length < 2;
+        
+        // 更新可用能量
+        roomQueue.availableEnergy = room.energyAvailable;
+        roomQueue.energyCapacity = room.energyCapacityAvailable;
+        
+        // 更新spawn状态
+        roomQueue.spawns = spawns.map(spawn => ({
+            id: spawn.id,
+            name: spawn.name,
+            busy: !!spawn.spawning
+        }));
+    }
+
+    analyzeAndQueueCreeps(room) {
+        const roomQueue = Memory.spawns.queues[room.name];
+        
+        // 如果队列已满，不再分析
+        if (roomQueue.queue.length >= 10) return;
+        
+        // 获取当前房间的creep数量
+        const creepCounts = this.getCreepCounts(room);
+        
+        // 获取目标数量
+        const targetCounts = this.getTargetCounts(room);
+        
+        // 分析每个角色的需求
+        for (let role in targetCounts) {
+            const current = creepCounts[role] || 0;
+            const target = targetCounts[role];
+            
+            if (current < target) {
+                // 计算需要添加的数量
+                const needed = target - current;
+                
+                // 检查队列中是否已经有该角色的请求
+                const inQueue = roomQueue.queue.filter(req => req.role === role).length;
+                
+                // 如果队列中的数量加上当前数量仍小于目标，添加新的请求
+                if (current + inQueue < target) {
+                    this.queueCreep(room, {
+                        role: role,
+                        priority: ROLE_PRIORITIES[role],
+                        body: this.getOptimalBody(room, role)
+                    });
+                }
+            }
+        }
+    }
+
+    getCreepCounts(room) {
+        const counts = {};
+        for (let name in Game.creeps) {
+            const creep = Game.creeps[name];
+            if (creep.room.name === room.name) {
+                counts[creep.memory.role] = (counts[creep.memory.role] || 0) + 1;
+            }
+        }
+        return counts;
+    }
+
+    getTargetCounts(room) {
+        // 基于房间等级和状态动态计算目标数量
+        const rcl = room.controller.level;
+        const hostiles = room.find(FIND_HOSTILE_CREEPS).length;
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES).length;
+        
+        return {
+            harvester: Math.min(rcl + 1, 4),
+            carrier: rcl >= 3 ? Math.min(rcl, 4) : 0,
+            upgrader: Math.min(rcl + 1, 3),
+            builder: constructionSites > 0 ? Math.min(rcl, 3) : 0,
+            repairer: Math.min(Math.floor(rcl/2), 2),
+            defender: hostiles > 0 ? Math.min(hostiles, 3) : 0,
+            healer: hostiles > 0 ? Math.floor(hostiles/2) : 0,
+            rangedAttacker: hostiles > 0 ? Math.min(hostiles, 2) : 0,
+            scout: rcl >= 4 ? 1 : 0
+        };
+    }
+
+    getOptimalBody(room, role) {
+        const energy = room.energyCapacityAvailable;
+        const emergencyMode = Memory.spawns.queues[room.name].emergencyMode;
+        
+        // 紧急模式下使用基础配置
+        if (emergencyMode) {
+            return [WORK, CARRY, MOVE];
+        }
+        
+        // 根据角色和可用能量返回最优体型
+        const bodies = {
+            harvester: this.getHarvesterBody(energy),
+            carrier: this.getCarrierBody(energy),
+            upgrader: this.getUpgraderBody(energy),
+            builder: this.getBuilderBody(energy),
+            repairer: this.getRepairerBody(energy),
+            defender: this.getDefenderBody(energy),
+            healer: this.getHealerBody(energy),
+            rangedAttacker: this.getRangedAttackerBody(energy),
+            scout: this.getScoutBody(energy)
+        };
+        
+        return bodies[role] || [WORK, CARRY, MOVE];
+    }
+
+    getHarvesterBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 200); // WORK=100, CARRY=50, MOVE=50
+        maxParts = Math.min(maxParts, 6); // 限制最大部件数
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(WORK);
+            body.push(CARRY);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getCarrierBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 150); // CARRY=50, CARRY=50, MOVE=50
+        maxParts = Math.min(maxParts, 8);
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(CARRY);
+            body.push(CARRY);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getUpgraderBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 200); // WORK=100, CARRY=50, MOVE=50
+        maxParts = Math.min(maxParts, 6);
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(WORK);
+            body.push(CARRY);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getBuilderBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 200);
+        maxParts = Math.min(maxParts, 5);
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(WORK);
+            body.push(CARRY);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getRepairerBody(energy) {
+        return this.getBuilderBody(energy); // 使用与建造者相同的体型
+    }
+
+    getDefenderBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 190); // ATTACK=80, TOUGH=10, MOVE=100
+        maxParts = Math.min(maxParts, 7);
+        
+        // 添加TOUGH
+        for (let i = 0; i < Math.min(maxParts, 2); i++) {
+            body.push(TOUGH);
+        }
+        
+        // 添加ATTACK
+        for (let i = 0; i < maxParts; i++) {
+            body.push(ATTACK);
+        }
+        
+        // 添加MOVE
+        for (let i = 0; i < maxParts; i++) {
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getHealerBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 300); // HEAL=250, MOVE=50
+        maxParts = Math.min(maxParts, 5);
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(HEAL);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getRangedAttackerBody(energy) {
+        let body = [];
+        let maxParts = Math.floor(energy / 200); // RANGED_ATTACK=150, MOVE=50
+        maxParts = Math.min(maxParts, 6);
+        
+        for (let i = 0; i < maxParts; i++) {
+            body.push(RANGED_ATTACK);
+            body.push(MOVE);
+        }
+        
+        return body;
+    }
+
+    getScoutBody(energy) {
+        return [MOVE, MOVE, MOVE]; // 轻量级侦察兵
+    }
+
+    queueCreep(room, request) {
+        const roomQueue = Memory.spawns.queues[room.name];
+        
+        // 创建新的请求
+        const spawnRequest = {
+            role: request.role,
+            body: request.body,
+            priority: request.priority,
+            timeAdded: Game.time
+        };
+        
+        // 将请求添加到队列并按优先级排序
+        roomQueue.queue.push(spawnRequest);
+        roomQueue.queue.sort((a, b) => a.priority - b.priority);
+        
+        // 限制队列长度
+        if (roomQueue.queue.length > 20) {
+            roomQueue.queue = roomQueue.queue.slice(0, 20);
+        }
+    }
+
+    processSpawnQueue(room) {
+        const roomQueue = Memory.spawns.queues[room.name];
+        if (!roomQueue || roomQueue.queue.length === 0) return;
+        
+        // 获取可用的spawn
+        const availableSpawn = room.find(FIND_MY_SPAWNS).find(spawn => !spawn.spawning);
+        if (!availableSpawn) return;
+        
+        // 获取队列中的第一个请求
+        const request = roomQueue.queue[0];
+        
+        // 检查是否有足够的能量
+        const bodyCost = this.calculateBodyCost(request.body);
+        if (room.energyAvailable < bodyCost) return;
+        
+        // 尝试孵化
+        const creepName = this.generateCreepName(request.role);
+        const result = availableSpawn.spawnCreep(request.body, creepName, {
+            memory: {
+                role: request.role,
+                room: room.name,
+                working: false
+            }
+        });
+        
+        // 如果孵化成功，从队列中移除请求
+        if (result === OK) {
+            roomQueue.queue.shift();
+            console.log(`房间 ${room.name} 开始孵化 ${request.role}: ${creepName}`);
+            
+            // 更新统计信息
+            this.recordSpawn(room, request);
+        }
+    }
+
+    calculateBodyCost(body) {
+        return body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
+    }
+
+    generateCreepName(role) {
+        return role.charAt(0).toUpperCase() + role.slice(1) + Game.time;
+    }
+
+    recordSpawn(room, request) {
+        if (!Memory.spawns.stats[room.name]) {
+            Memory.spawns.stats[room.name] = {
+                spawns: {},
+                totalSpawns: 0
+            };
+        }
+        
+        const stats = Memory.spawns.stats[room.name];
+        stats.totalSpawns++;
+        
+        if (!stats.spawns[request.role]) {
+            stats.spawns[request.role] = 0;
+        }
+        stats.spawns[request.role]++;
+    }
+
+    updateStats(room) {
+        const stats = Memory.spawns.stats[room.name];
+        if (!stats) return;
+        
+        console.log(`房间 ${room.name} 孵化统计:
+            总孵化数: ${stats.totalSpawns}
+            角色分布:
+            ${Object.entries(stats.spawns)
+                .map(([role, count]) => `${role}: ${count}`)
+                .join('\n            ')}`);
+    }
+}
+
+module.exports = new SpawnManager();

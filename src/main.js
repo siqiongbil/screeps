@@ -1,217 +1,382 @@
-// main.js
-// 主循环：整合各模块，每 tick 调用各角色逻辑
-const cleanup = require('./cleanup').cleanup;
-const spawner = require('./spawner');
-const towerModule = require('./tower');
-const constructionManager = require('./constructionManager');
-const defenseMatrix = require('./defenseMatrix'); // 防御矩阵模块（可选）
-const utils = require('./utils');
-const formation = require('./formation'); // 阵型管理模块
+// 导入原型扩展
+require('prototype.creep');
 
-// 导入各角色模块
-const roleHarvester = require('./harvester');
+// 导入所有角色模块
+const roleHarvester = require('role.harvester');
+const roleMiner = require('role.miner');
+const roleCarrier = require('role.carrier');
+const roleUpgrader = require('role.upgrader');
+const roleBuilder = require('role.builder');
+const roleRepairer = require('role.repairer');
+const roleDefender = require('role.defender');
+const roleHealer = require('role.healer');
+const roleRangedAttacker = require('role.rangedAttacker');
+const roleScout = require('role.scout');
 
-const roleUpgrader = require('./upgrader');
-const roleBuilder = require('./builder');
-const roleRepairer = require('./repairer');
-const roleSoldier = require('./soldier');         // 入侵角色
-const roleClaimer = require('./claimer');         // 入侵角色
-const roleMineralHarvester = require('./mineralHarvester');
-const roleDefender = require('./defender');
-const roleRanger = require('./ranger');             // 入侵角色
-const roleHealer = require('./healer');             // 入侵角色
-const roleLinkManager = require('./linkManager');   // Link 管理角色
-const roleStrongHarvester = require('./strongHarvester'); // 加强版采集者
-const roleTransporter = require('./transporter');   // 新增资源运送者角色
-const roleSpecializedHarvester = require('./specializedHarvester'); // 专精采集者
-const roleSpecializedTransporter = require('./specializedTransporter'); // 专精运送者
+// 导入其他模块
+const buildingPlanner = require('buildingPlanner');
+const utils = require('utils');
+const roadPlanner = require('roadPlanner');
 
-module.exports.loop = function () {
-    // 内存清理：删除所有已死亡 creep 的内存数据
-    cleanup();
+// 导入系统模块
+const battleSystem = require('battleSystem');
+const resourceManager = require('resourceManager');
+const expedition = require('expedition');
+const monitor = require('monitor');
+const resourceCleaner = require('resourceCleaner');
 
-    // 设置主房间
-    if (!Memory.mainRoom) {
-        const firstRoomName = Object.keys(Game.rooms)[0];
-        Memory.mainRoom = firstRoomName;
-        console.log(`Main room set to: ${Memory.mainRoom}`);
-    }
+// CPU使用统计
+let lastTime = Game.time;
+let cpuUsage = {};
 
-    // 遍历所有房间，处理所有控制器属于我的房间（包括新占领的房间）
-    for (const roomName in Game.rooms) {
-        const room = Game.rooms[roomName];
-        if (room.controller && room.controller.my) {
-            // 输出房间状态（便于调试）
-            utils.logRoomStatus(room);
-
-            // 自动孵化：根据当前房间状态生成所需 creep（孵化时设置 homeRoom）
-            spawner.spawnCreeps(room);
-
-            // 自动安排关键建筑施工工地（例如 Terminal、Labs）
-            constructionManager.scheduleConstruction(room);
-
-            // 每 50 tick 调用一次防御矩阵构建（可根据需要调整频率）
-            if (Game.time % 50 === 0) {
-                defenseMatrix.scheduleDefenseMatrix(room);
-            }
-
-            // 控制房间内所有塔执行攻击或维修任务
-            const towers = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER });
-            towers.forEach(tower => {
-                towerModule.run(tower);
-            });
-
-            // 入侵目标管理：如果当前房间名称与入侵目标匹配，则说明入侵成功，清除入侵标记
-            if (room.memory.invasionTarget && room.name === room.memory.invasionTarget) {
-                delete room.memory.invasionTarget;
-                console.log(`Room ${room.name} successfully invaded. Invasion target cleared.`);
-            }
-
-            // 规划阵型
-            formation.planFormation(room);
-
-            // 检查并补充防御矩阵工地
-            checkAndRebuildDefenseMatrix(room);
-
-            // 判断新占领房间生态发展完成，将资源运回主房间
-            if (room.name !== Memory.mainRoom) {
-                const storage = room.storage;
-                if (storage && storage.store.getUsedCapacity(RESOURCE_ENERGY) > storage.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
-                    room.memory.transportResourcesToMainRoom = true;
-                    console.log(`Room ${room.name} is ready to transport resources to main room ${Memory.mainRoom}`);
-                }
-            }
-
-            // 检查 creep 数量是否足够
-            checkCreepCounts(room);
-        } else {
-            console.log(`Room ${roomName} does not have a controller or is not owned by us.`);
-        }
-    }
-
-     // 遍历所有 creep，根据其 memory.role 执行对应行为逻辑
-        for (const name in Game.creeps) {
-            const creep = Game.creeps[name];
-            if (creep.room.controller && creep.room.controller.my) {
-                switch (creep.memory.role) {
-                    // 删除原有的 harvester 角色
-                    case 'harvester':
-                        roleHarvester.run(creep);
-                        break;
-                    case 'upgrader':
-                        roleUpgrader.run(creep);
-                        break;
-                    case 'builder':
-                        roleBuilder.run(creep);
-                        break;
-                    case 'repairer':
-                        roleRepairer.run(creep);
-                        break;
-                    case 'soldier':
-                        roleSoldier.run(creep);
-                        break;
-                    case 'claimer':
-                        roleClaimer.run(creep);
-                        break;
-                    case 'mineralHarvester':
-                        roleMineralHarvester.run(creep);
-                        break;
-                    case 'defender':
-                        roleDefender.run(creep);
-                        break;
-                    case 'ranger':
-                        roleRanger.run(creep);
-                        break;
-                    case 'healer':
-                        roleHealer.run(creep);
-                        break;
-                    case 'linkManager':
-                        roleLinkManager.run(creep);
-                        break;
-                    case 'strongHarvester':
-                        roleStrongHarvester.run(creep);
-                        break;
-                    case 'transporter':
-                        roleTransporter.run(creep); // 新增资源运送者角色
-                        break;
-                    case 'specializedHarvester':
-                        roleSpecializedHarvester.run(creep); // 专精采集者
-                        break;
-                    case 'specializedTransporter':
-                        roleSpecializedTransporter.run(creep); // 专精运送者
-                        break;
-                    default:
-                        // 默认行为：升级当前房间控制器
-                        roleUpgrader.run(creep);
-                        break;
-                }
-            } else {
-                console.log(`Creep ${creep.name} is in a room without a controller or not owned by us.`);
-            }
-        }
-        // 遍历所有房间，处理所有控制器属于我的房间（包括新占领的房间）
-        for (const roomName in Game.rooms) {
-            const room = Game.rooms[roomName];
-            if (room.controller && room.controller.my) {
-    
-                // 检测掉落资源并让最近的能捡的 creep 去捡取
-                const droppedResources = room.find(FIND_DROPPED_RESOURCES);
-                droppedResources.forEach(resource => {
-                    const closestCreep = utils.findClosestCreepToPickup(resource.pos);
-                    if (closestCreep) {
-                        if (closestCreep.pickup(resource) === ERR_NOT_IN_RANGE) {
-                            closestCreep.moveTo(resource, { visualizePathStyle: { stroke: '#ffaa00' } });
-                        }
-                    }
-                });
-    
-            } else {
-                console.log(`Room ${roomName} does not have a controller or is not owned by us.`);
-            }
-        }
-        // 在主循环或其他合适的地方检查和修复 creep 的内存
-for (const creepName in Game.creeps) {
-    const creep = Game.creeps[creepName];
-    if (!creep.memory.homeRoom) {
-        creep.memory.homeRoom = creep.room.name; // 设置 homeRoom 属性
-        console.log(`为 creep ${creep.name} 设置了 homeRoom: ${creep.room.name}`);
-    }
-}
-
+// 创建角色运行映射
+const roleMap = {
+    'harvester': roleHarvester,
+    'miner': roleMiner,
+    'carrier': roleCarrier,
+    'upgrader': roleUpgrader,
+    'builder': roleBuilder,
+    'repairer': roleRepairer,
+    'defender': roleDefender,
+    'healer': roleHealer,
+    'rangedAttacker': roleRangedAttacker,
+    'scout': roleScout
 };
 
-// 新增函数：检查并补充防御矩阵工地
-function checkAndRebuildDefenseMatrix(room) {
-    // 检查是否有防御矩阵结构
-    const defenseStructures = room.find(FIND_MY_STRUCTURES, {
-        filter: structure => structure.structureType === STRUCTURE_RAMPART || structure.structureType === STRUCTURE_WALL
-    });
+module.exports.loop = function() {
+    // 性能监控开始
+    const startCpu = Game.cpu.getUsed();
+    
+    try {
+        // 初始化全局内存
+        if(!Memory.rooms) {
+            Memory.rooms = {};
+        }
+        
+        // 清理内存（每100 ticks执行一次）
+        if(Game.time % 100 === 0) {
+            // 清理死亡creep的内存
+            for(let name in Memory.creeps) {
+                if(!Game.creeps[name]) {
+                    delete Memory.creeps[name];
+                    console.log(`清理死亡creep内存: ${name}`);
+                }
+            }
 
-    // 如果没有找到足够的防御结构，重新安排防御矩阵建设
-    if (defenseStructures.length < 10) { // 根据实际情况调整阈值
-        console.log(`Room ${room.name}: Defense matrix structures are insufficient. Rebuilding...`);
-        constructionManager.scheduleConstruction(room, 'defenseMatrix');
+            // 清理无效的房间内存
+            for(let roomName in Memory.rooms) {
+                if(!Game.rooms[roomName]) {
+                    delete Memory.rooms[roomName];
+                    console.log(`清理无效房间内存: ${roomName}`);
+                }
+            }
+        }
+        
+        // 遍历所有房间
+        for(let roomName in Game.rooms) {
+            const room = Game.rooms[roomName];
+            
+            // 检查是否是我们的房间
+            if(!room.controller || !room.controller.my) continue;
+
+            // 初始化房间内存
+            if(!Memory.rooms[roomName]) {
+                Memory.rooms[roomName] = {
+                    sources: room.find(FIND_SOURCES).map(s => s.id),
+                    structures: {},
+                    defenseStatus: {},
+                    resourceStatus: {},
+                    lastUpdate: Game.time
+                };
+            }
+
+            // 每100 ticks更新房间缓存
+            if(Game.time % 100 === 0 || !Memory.rooms[roomName].structures) {
+                Memory.rooms[roomName].structures = {
+                    spawns: room.find(FIND_MY_SPAWNS).map(s => s.id),
+                    extensions: room.find(FIND_MY_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_EXTENSION
+                    }).map(s => s.id),
+                    containers: room.find(FIND_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_CONTAINER
+                    }).map(s => s.id),
+                    towers: room.find(FIND_MY_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_TOWER
+                    }).map(s => s.id)
+                };
+            }
+
+            // 检查房间威胁
+            const hostiles = room.find(FIND_HOSTILE_CREEPS);
+            const isUnderAttack = hostiles.length > 0;
+
+            // 更新房间状态
+            const roomStatus = {
+                energy: room.energyAvailable,
+                energyCapacity: room.energyCapacityAvailable,
+                hostileCount: hostiles.length,
+                defenseStatus: Memory.rooms[roomName].defenseStatus || {},
+                resources: Memory.rooms[roomName].resourceStatus || {}
+            };
+
+            // 每100 ticks更新一次房间状态
+            if(Game.time % 100 === 0) {
+                console.log(`房间 ${roomName} 状态报告：`);
+                console.log(`能量：${roomStatus.energy}/${roomStatus.energyCapacity}`);
+                console.log(`敌人数量：${roomStatus.hostileCount}`);
+                if(roomStatus.defenseStatus.threatLevel) {
+                    console.log(`威胁等级：${roomStatus.defenseStatus.threatLevel}`);
+                }
+            }
+
+            // 创建建筑工地（每50 ticks检查一次）
+            if(Game.time % 50 === 0) {
+                buildingPlanner.run(room);
+                roadPlanner.run(room);
+            }
+
+            // 获取该房间需要的creep配置
+            const creepSetup = buildingPlanner.getCreepSetup(room);
+
+            // 生成所需的creeps
+            const spawn = room.find(FIND_MY_SPAWNS)[0];
+            if(spawn && !spawn.spawning) {
+                // 获取当前房间的creep数量
+                const roomCreeps = _.filter(Game.creeps, creep => creep.room.name === roomName);
+                const harvesters = _.filter(roomCreeps, creep => creep.memory.role === 'harvester');
+                
+                // 如果没有采集者，立即生成一个基础采集者
+                if(harvesters.length === 0) {
+                    const newName = 'Harvester' + Game.time;
+                    const result = spawn.spawnCreep([WORK, CARRY, MOVE], newName, {
+                        memory: {role: 'harvester', room: roomName, working: false}
+                    });
+                    if(result === OK) {
+                        console.log(`紧急情况：生成新的采集者 ${newName}`);
+                    }
+                } else {
+                    // 根据房间状态确定需要的角色
+                    const constructionSites = room.find(FIND_CONSTRUCTION_SITES).length > 0;
+                    const damagedStructures = room.find(FIND_STRUCTURES, {
+                        filter: s => s.hits < s.hitsMax && s.structureType !== STRUCTURE_WALL
+                    }).length > 0;
+                    const hasContainers = room.find(FIND_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_CONTAINER
+                    }).length > 0;
+                    
+                    // 定义基于条件的角色顺序
+                    let roleOrder = ['harvester'];  // 采集者始终是第一优先级
+                    
+                    // 只有当有足够的采集者时才添加其他角色
+                    if(harvesters.length >= 2) {
+                        roleOrder.push('upgrader');  // 升级者是第二优先级
+                        
+                        // 添加建筑相关角色
+                        if(constructionSites) roleOrder.push('builder');
+                        if(damagedStructures) roleOrder.push('repairer');
+                        
+                        // 添加资源优化角色（只在有容器和控制器等级>=3时）
+                        if(hasContainers && room.controller.level >= 3) {
+                            roleOrder.push('carrier');
+                            roleOrder.push('miner');
+                        }
+                        
+                        // 添加防御角色（只在有敌人时）
+                        if(hostiles.length > 0) {
+                            roleOrder.push('defender');
+                            roleOrder.push('healer');
+                            roleOrder.push('rangedAttacker');
+                        }
+                        
+                        // 添加侦察兵（只在控制器等级>=4时）
+                        if(room.controller.level >= 4) {
+                            roleOrder.push('scout');
+                        }
+                    }
+                    
+                    // 生成creep
+                    for(let role of roleOrder) {
+                        const roleCreeps = _.filter(roomCreeps, creep => creep.memory.role === role);
+                        if(roleCreeps.length < creepSetup[role].count) {
+                            const newName = role.charAt(0).toUpperCase() + role.slice(1) + Game.time;
+                            const result = spawn.spawnCreep(creepSetup[role].body, newName, {
+                                memory: {
+                                    role: role,
+                                    room: roomName,
+                                    working: false,
+                                    upgrading: role === 'upgrader' ? false : undefined  // 为升级者添加特定的内存
+                                }
+                            });
+                            if(result === OK) {
+                                console.log(`生成新的 ${role}: ${newName}`);
+                            }
+                            break;  // 每次只生成一个creep
+                        }
+                    }
+                }
+            }
+
+            // 运行所有creeps的逻辑
+            for(let name in Game.creeps) {
+                const creep = Game.creeps[name];
+                if(creep.room.name != roomName) continue;
+
+                try {
+                    // 首先运行战斗系统
+                    battleSystem.run(room);
+                    
+                    // 如果房间不在高威胁状态下，运行其他系统
+                    if(!room.memory.threatLevel || room.memory.threatLevel < 3) {
+                        // 运行资源管理系统
+                        resourceManager.run(room);
+                        
+                        // 运行远征系统
+                        expedition.run(room);
+                        
+                        // 运行监控系统
+                        monitor.run();
+
+                        // 运行资源清理系统
+                        resourceCleaner.run(room);
+                    }
+                    
+                    // 根据角色运行creep
+                    if(creep.memory.role && roleMap[creep.memory.role]) {
+                        try {
+                            // 尝试运行资源清理任务
+                            if(!resourceCleaner.runCollector(creep)) {
+                                // 如果没有清理任务，执行正常角色任务
+                                roleMap[creep.memory.role].run(creep);
+                            }
+                        } catch(error) {
+                            console.log(`Error running ${creep.memory.role} ${creep.name}: ${error}`);
+                        }
+                    }
+                } catch(error) {
+                    console.log(`Error running ${creep.memory.role} ${creep.name}: ${error}`);
+                }
+            }
+
+            // 运行防御塔
+            const towers = room.find(FIND_MY_STRUCTURES, {
+                filter: {structureType: STRUCTURE_TOWER}
+            });
+            
+            towers.forEach(tower => {
+                if(tower.store[RESOURCE_ENERGY] < 10) return;
+
+                // 如果有敌人，优先攻击
+                if(hostiles.length > 0) {
+                    const target = tower.pos.findClosestByRange(hostiles);
+                    if(target) {
+                        tower.attack(target);
+                        return;
+                    }
+                }
+
+                // 如果没有敌人且能量充足，修复建筑
+                if(tower.store[RESOURCE_ENERGY] > tower.store.getCapacity(RESOURCE_ENERGY) * 0.7) {
+                    const closestDamagedStructure = tower.pos.findClosestByRange(FIND_STRUCTURES, {
+                        filter: (structure) => structure.hits < structure.hitsMax &&
+                            (structure.structureType != STRUCTURE_WALL || structure.hits < 10000)
+                    });
+                    if(closestDamagedStructure) {
+                        tower.repair(closestDamagedStructure);
+                    }
+                }
+            });
+
+            // 更新房间防御状态
+            if(isUnderAttack) {
+                room.memory.defenseStatus = {
+                    threatLevel: Math.min(10, hostiles.length * 2),
+                    lastAttack: Game.time,
+                    attackerCount: hostiles.length
+                };
+            }
+        }
+        
+        // 每100个tick显示状态报告
+        if(Game.time % 100 === 0) {
+            // 显示房间状态
+            for(let roomName in Game.rooms) {
+                const room = Game.rooms[roomName];
+                if(room.controller && room.controller.my) {
+                    const status = utils.getRoomStatus(room);
+                    const battleStatus = battleSystem.getBattleStatus(room);
+                    const creepSetup = buildingPlanner.getCreepSetup(room);
+                    
+                    // 统计防御单位
+                    const defenders = _.filter(Game.creeps, creep => 
+                        creep.memory.role === 'defender' && creep.room.name === roomName
+                    );
+                    
+                    console.log(`房间 ${roomName} 状态:
+                        控制器等级: ${room.controller.level}
+                        能量: ${status.energy}/${status.energyCapacity}
+                        建筑工地: ${status.constructionSites}
+                        待修建筑: ${status.damagedStructures}
+                        
+                        战斗状态:
+                        威胁等级: ${battleStatus.threatLevel}
+                        敌人数量: ${battleStatus.hostileCount}
+                        治疗者: ${battleStatus.healerCount}
+                        攻击者: ${battleStatus.attackerCount}
+                        远程攻击者: ${battleStatus.rangedCount}
+                        防御塔: ${battleStatus.towerCount}
+                        防御塔能量: ${battleStatus.towerEnergy}
+                        墙壁数量: ${battleStatus.wallCount}
+                        平均墙壁生命: ${Math.floor(battleStatus.averageWallHits)}
+                        安全模式: ${battleStatus.safeMode.active ? '激活' : '未激活'} (剩余: ${battleStatus.safeMode.available})
+                        防御者数量: ${defenders.length}/${creepSetup.defender.count}
+                        
+                        Creep配置:
+                        采集者: ${_.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === roomName).length}/${creepSetup.harvester.count}
+                        升级者: ${_.filter(Game.creeps, c => c.memory.role === 'upgrader' && c.room.name === roomName).length}/${creepSetup.upgrader.count}
+                        建造者: ${_.filter(Game.creeps, c => c.memory.role === 'builder' && c.room.name === roomName).length}/${creepSetup.builder.count}
+                        维修者: ${_.filter(Game.creeps, c => c.memory.role === 'repairer' && c.room.name === roomName).length}/${creepSetup.repairer.count}`);
+                    
+                    // 显示资源状态
+                    if(room.storage || room.terminal) {
+                        const resourceStatus = resourceManager.getResourceStatus(room);
+                        console.log(`资源状态:
+                            能量: ${resourceStatus.energy.available}/${resourceStatus.energy.capacity}
+                            储存: ${resourceStatus.energy.storage}
+                            终端: ${resourceStatus.energy.terminal}
+                            矿物: ${Object.keys(resourceStatus.minerals).length}
+                            化合物: ${Object.keys(resourceStatus.compounds).length}
+                            市场订单: ${resourceStatus.market.orders}
+                            信用点数: ${resourceStatus.market.credits}`);
+                    }
+
+                    // 显示能量分布
+                    const distribution = resourceManager.calculateResourceDistribution(room);
+                    console.log(`房间 ${roomName} 能量分布:`, JSON.stringify(distribution, null, 2));
+                    
+                    // 显示道路状态报告
+                    const roadReport = roadPlanner.getRoadReport(room);
+                    console.log(`房间 ${roomName} 道路状态:
+                        总数: ${roadReport.total}
+                        受损: ${roadReport.damaged}
+                        严重受损: ${roadReport.criticallyDamaged}
+                        平均健康度: ${roadReport.averageHealth.toFixed(2)}%
+                        维护成本: ${roadReport.maintenanceCost.toFixed(2)}`);
+                }
+            }
+            
+            // CPU使用统计
+            if(Game.time % 10 === 0) {
+                const used = Game.cpu.getUsed();
+                cpuUsage.current = used;
+                cpuUsage.average = (cpuUsage.average || used) * 0.9 + used * 0.1;
+                
+                if(Game.time % 100 === 0) {
+                    console.log(`CPU使用情况 - 当前: ${cpuUsage.current.toFixed(2)}, 平均: ${cpuUsage.average.toFixed(2)}`);
+                }
+            }
+        }
+        
+    } catch(error) {
+        console.log('主循环错误:', error);
     }
-}
-
-// 新增函数：检查 creep 数量是否足够
-function checkCreepCounts(room) {
-    const counts = {
-        harvester:        _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name).length,
-        strongHarvester:  _.filter(Game.creeps, c => c.memory.role === 'strongHarvester' && c.room.name === room.name).length, // 强化版采集者
-        upgrader:         _.filter(Game.creeps, c => c.memory.role === 'upgrader' && c.room.name === room.name).length,
-        builder:          _.filter(Game.creeps, c => c.memory.role === 'builder' && c.room.name === room.name).length,
-        repairer:         _.filter(Game.creeps, c => c.memory.role === 'repairer' && c.room.name === room.name).length,
-        soldier:          _.filter(Game.creeps, c => c.memory.role === 'soldier' && c.room.name === room.name).length,
-        claimer:          _.filter(Game.creeps, c => c.memory.role === 'claimer' && c.room.name === room.name).length,
-        ranger:           _.filter(Game.creeps, c => c.memory.role === 'ranger' && c.room.name === room.name).length,
-        healer:           _.filter(Game.creeps, c => c.memory.role === 'healer' && c.room.name === room.name).length,
-        defender:         _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name).length,
-        mineralHarvester: _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.room.name === room.name).length,
-        linkManager:      _.filter(Game.creeps, c => c.memory.role === 'linkManager' && c.room.name === room.name).length, // 新增 LinkManager 角色
-        transporter:      _.filter(Game.creeps, c => c.memory.role === 'transporter' && c.room.name === room.name).length // 新增资源运送者角色
-    };
-
-    console.log(`Room ${room.name} creep counts:`, counts);
-}
-
+}; 
