@@ -19,6 +19,9 @@ const STRUCTURE_PRIORITY = {
 };
 
 module.exports = {
+    // 导出建筑优先级常量
+    STRUCTURE_PRIORITY: STRUCTURE_PRIORITY,
+    
     // 主运行函数
     run: function(room) {
         // 如果房间没有控制器或控制器不属于我们，退出

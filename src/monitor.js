@@ -63,8 +63,8 @@ module.exports = {
                 },
                 memory: 0.9,         // 内存使用率阈值
                 energy: 0.2,         // 能量储备阈值
-                creeps: 0.8,         // creep数量阈值
-                structures: 0.9      // 建筑数量阈值
+                creeps: 1.2,         // creep数量阈值（超过目标数量的120%）
+                structures: 1.0      // 建筑数量阈值（达到限制的100%）
             }
         };
     },
@@ -168,14 +168,98 @@ module.exports = {
             if(monitor.stats.minerals.length > 100) monitor.stats.minerals.shift();
 
             // 记录creep数量
-            const creepCount = Object.keys(Game.creeps).length;
-            monitor.stats.creeps.push(creepCount);
-            if(monitor.stats.creeps.length > 100) monitor.stats.creeps.shift();
+            const creepCounts = _.countBy(Game.creeps, creep => 
+                creep.room.name === room.name ? creep.memory.role : 'external'
+            );
+            delete creepCounts.external;
+            
+            // 使用spawner.js中的getTargetCounts获取目标数量
+            try {
+                // 获取SpawnManager实例
+                const spawnManager = require('./spawner');
+                const targetCounts = spawnManager.getTargetCounts(room);
+                
+                const totalCreeps = Object.values(creepCounts).reduce((sum, count) => sum + count, 0);
+                const totalTarget = Object.values(targetCounts).reduce((sum, count) => sum + count, 0);
+                const creepRatio = totalTarget > 0 ? totalCreeps / totalTarget : 1;
+                
+                monitor.stats.creeps.push(creepRatio);
+                if(monitor.stats.creeps.length > 100) monitor.stats.creeps.shift();
+                
+                // 记录详细的Creep统计信息
+                if(!monitor.creepStats) {
+                    monitor.creepStats = {};
+                }
+                monitor.creepStats = {
+                    counts: creepCounts,
+                    targets: targetCounts,
+                    totalCreeps: totalCreeps,
+                    totalTarget: totalTarget,
+                    ratio: creepRatio,
+                    lastUpdate: Game.time
+                };
+            } catch (error) {
+                console.log(`房间 ${room.name} 计算Creep比率时出错：${error.message}`);
+                // 如果出错，使用默认值
+                monitor.stats.creeps.push(1);
+                if(monitor.stats.creeps.length > 100) monitor.stats.creeps.shift();
+            }
 
-            // 记录建筑数量
-            const structureCount = room.find(FIND_STRUCTURES).length;
-            monitor.stats.structures.push(structureCount);
-            if(monitor.stats.structures.length > 100) monitor.stats.structures.shift();
+            // 记录建筑数量，使用buildingPlanner中的优先级
+            try {
+                const buildingPlanner = require('./buildingPlanner');
+                const STRUCTURE_PRIORITY = buildingPlanner.STRUCTURE_PRIORITY;
+
+                const structures = room.find(FIND_MY_STRUCTURES);
+                const structureCounts = _.countBy(structures, 'structureType');
+                let totalRatio = 0;
+                let validTypes = 0;
+                let weightedRatio = 0;
+                let totalWeight = 0;
+                
+                // 检查每种建筑类型的数量是否超过限制，并考虑优先级
+                for(let type in structureCounts) {
+                    // 使用buildingPlanner的getStructureLimit函数
+                    const limit = buildingPlanner.getStructureLimit(type, room.controller.level);
+                    if(limit > 0) {
+                        const count = structureCounts[type] || 0;
+                        const ratio = count / limit;
+                        const priority = STRUCTURE_PRIORITY[type] || 15; // 未定义优先级的建筑放最后
+                        const weight = 1 / priority; // 优先级越高，权重越大
+                        
+                        weightedRatio += ratio * weight;
+                        totalWeight += weight;
+                        validTypes++;
+
+                        // 记录详细信息用于调试
+                        if(ratio > 1) {
+                            console.log(`房间 ${room.name} 建筑 ${type} 数量超限：${count}/${limit}`);
+                        }
+                    }
+                }
+                
+                // 计算加权平均比率
+                const structureRatio = validTypes > 0 ? weightedRatio / totalWeight : 0;
+                monitor.stats.structures.push(structureRatio);
+                if(monitor.stats.structures.length > 100) monitor.stats.structures.shift();
+
+                // 记录建筑统计信息
+                if(!monitor.buildingStats) {
+                    monitor.buildingStats = {};
+                }
+                monitor.buildingStats = {
+                    counts: structureCounts,
+                    totalStructures: structures.length,
+                    validTypes: validTypes,
+                    averageRatio: structureRatio,
+                    lastUpdate: Game.time
+                };
+            } catch (error) {
+                console.log(`房间 ${room.name} 计算建筑比率时出错：${error.message}`);
+                // 如果出错，使用默认值
+                monitor.stats.structures.push(0);
+                if(monitor.stats.structures.length > 100) monitor.stats.structures.shift();
+            }
 
         } catch (error) {
             console.log(`房间 ${room.name} 更新监控数据时出错：${error.message}`);
@@ -212,101 +296,99 @@ module.exports = {
         const stats = monitor.stats;
         const thresholds = monitor.thresholds;
 
+        // 清除旧的异常
+        monitor.anomalies = [];
+
         // 检查CPU使用率
-        if (!stats.cpu || !stats.cpu.usage || !stats.cpu.bucket || stats.cpu.usage.length === 0) {
-            return; // 如果数据还未初始化，跳过检查
+        if (stats.cpu && stats.cpu.usage && stats.cpu.bucket && stats.cpu.usage.length > 0) {
+            const recentCpuUsage = stats.cpu.usage.slice(-10); // 只看最近10个数据点
+            const avgCpu = recentCpuUsage.reduce((a, b) => a + b, 0) / recentCpuUsage.length;
+            const maxCpu = Math.max(...recentCpuUsage);
+            const minBucket = Math.min(...stats.cpu.bucket.slice(-10));
+            
+            if(maxCpu > thresholds.cpu.critical) {
+                this.addAnomaly(room, 'CPU使用率严重过高', {
+                    current: maxCpu,
+                    threshold: thresholds.cpu.critical,
+                    bucket: minBucket
+                }, true);
+            }
+            else if(avgCpu > thresholds.cpu.warning && minBucket < thresholds.cpu.bucketMin) {
+                this.addAnomaly(room, 'CPU使用率警告', {
+                    current: avgCpu,
+                    threshold: thresholds.cpu.warning,
+                    bucket: minBucket
+                }, true);
+            }
         }
 
-        const recentCpuUsage = stats.cpu.usage.slice(-10); // 只看最近10个数据点
-        const avgCpu = recentCpuUsage.reduce((a, b) => a + b, 0) / recentCpuUsage.length;
-        const maxCpu = Math.max(...recentCpuUsage);
-        const minBucket = Math.min(...stats.cpu.bucket.slice(-10));
-        
-        // CPU使用率检查逻辑
-        if(maxCpu > thresholds.cpu.critical) {
-            this.addAnomaly(room, 'CPU使用率严重过高', {
-                current: maxCpu,
-                threshold: thresholds.cpu.critical,
-                bucket: minBucket
-            });
-        }
-        else if(avgCpu > thresholds.cpu.warning && minBucket < thresholds.cpu.bucketMin) {
-            this.addAnomaly(room, 'CPU使用率警告', {
-                current: avgCpu,
-                threshold: thresholds.cpu.warning,
-                bucket: minBucket
-            });
-        }
-        else {
-            // 如果CPU使用正常，清除相关异常
-            this.clearAnomaly(room, 'CPU使用率严重过高');
-            this.clearAnomaly(room, 'CPU使用率警告');
-        }
-
-        // 检查其他指标前也添加数据存在性检查
         if (stats.memory && stats.memory.length > 0) {
-            // 检查内存使用率
             const avgMemory = stats.memory.reduce((a, b) => a + b, 0) / stats.memory.length;
             if(avgMemory > thresholds.memory) {
                 this.addAnomaly(room, '内存使用率过高', {
                     current: avgMemory,
                     threshold: thresholds.memory
-                });
+                }, true);
             }
         }
 
         if (stats.energy && stats.energy.length > 0) {
-            // 检查能量储备
             const avgEnergy = stats.energy.reduce((a, b) => a + b, 0) / stats.energy.length;
             if(avgEnergy < thresholds.energy) {
                 this.addAnomaly(room, '能量储备不足', {
                     current: avgEnergy,
                     threshold: thresholds.energy
-                });
+                }, true);
             }
         }
 
         if (stats.creeps && stats.creeps.length > 0) {
-            // 检查creep数量
             const avgCreeps = stats.creeps.reduce((a, b) => a + b, 0) / stats.creeps.length;
             if(avgCreeps > thresholds.creeps) {
                 this.addAnomaly(room, 'Creep数量过多', {
                     current: avgCreeps,
-                    threshold: thresholds.creeps
-                });
+                    threshold: thresholds.creeps,
+                    details: '当前Creep数量超过目标数量的120%'
+                }, true);
             }
         }
 
         if (stats.structures && stats.structures.length > 0) {
-            // 检查建筑数量
             const avgStructures = stats.structures.reduce((a, b) => a + b, 0) / stats.structures.length;
             if(avgStructures > thresholds.structures) {
                 this.addAnomaly(room, '建筑数量过多', {
                     current: avgStructures,
-                    threshold: thresholds.structures
-                });
+                    threshold: thresholds.structures,
+                    details: '某些类型的建筑数量已达到控制器等级限制'
+                }, true);
             }
         }
     },
 
     // 添加异常
-    addAnomaly: function(room, type, data) {
+    addAnomaly: function(room, type, data, suppressLog = false) {
         const monitor = room.memory.monitor;
         
         // 检查是否已存在相同类型的异常
         const existingAnomaly = monitor.anomalies.find(a => a.type === type);
         if(existingAnomaly) {
+            // 如果数据没有变化，不更新时间戳
+            if(JSON.stringify(existingAnomaly.data) === JSON.stringify(data)) {
+                return;
+            }
             existingAnomaly.data = data;
             existingAnomaly.time = Game.time;
         } else {
             monitor.anomalies.push({
                 type: type,
                 data: data,
-                time: Game.time
+                time: Game.time,
+                firstDetected: Game.time
             });
+            if(!suppressLog) {
+                console.log(`房间 ${room.name} 发现新异常：${type}`);
+            }
         }
-
-        console.log(`房间 ${room.name} 发现异常：${type}`);
     },
 
     // 生成报告
@@ -376,10 +458,10 @@ module.exports = {
             console.log(`能量储备：${(report.energy.avg * 100).toFixed(2)}%`);
         }
         if (report.creeps) {
-            console.log(`Creep数量：${report.creeps.avg.toFixed(1)}`);
+            console.log(`Creep数量比率：${(report.creeps.avg * 100).toFixed(2)}%`);
         }
         if (report.structures) {
-            console.log(`建筑数量：${report.structures.avg.toFixed(1)}`);
+            console.log(`建筑数量比率：${(report.structures.avg * 100).toFixed(2)}%`);
         }
         console.log(`异常数量：${report.anomalies.length}`);
     },
@@ -399,4 +481,4 @@ module.exports = {
         const monitor = room.memory.monitor;
         monitor.anomalies = monitor.anomalies.filter(a => a.type !== type);
     }
-}; 
+};

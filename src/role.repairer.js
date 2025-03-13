@@ -8,14 +8,9 @@ module.exports = {
             creep.memory.working = true;
         }
 
-        // 定义建筑优先级
-        const priority = {
-            [STRUCTURE_SPAWN]: 6,
-            [STRUCTURE_EXTENSION]: 5,
-            [STRUCTURE_TOWER]: 4,
-            [STRUCTURE_STORAGE]: 3,
-            [STRUCTURE_CONTAINER]: 2
-        };
+        // 使用buildingPlanner中的优先级
+        const buildingPlanner = require('./buildingPlanner');
+        const STRUCTURE_PRIORITY = buildingPlanner.STRUCTURE_PRIORITY;
 
         if(creep.memory.working) {
             // 寻找需要维修的建筑，按优先级排序
@@ -24,23 +19,17 @@ module.exports = {
             });
             
             if(targets.length > 0) {
-                // 按优先级排序：Spawn > Extension > Tower > Storage > Container > 其他
+                // 按优先级排序
                 const sortedTargets = targets.sort((a, b) => {
-                    return (priority[b.structureType] || 0) - (priority[a.structureType] || 0);
+                    const priorityA = STRUCTURE_PRIORITY[a.structureType] || 15;
+                    const priorityB = STRUCTURE_PRIORITY[b.structureType] || 15;
+                    return priorityA - priorityB; // 数字越小优先级越高
                 });
-
-                // 在相同类型的建筑中，优先修理损坏程度高的
-                const target = sortedTargets.reduce((best, current) => {
-                    if(!best) return current;
-                    if(best.structureType !== current.structureType) {
-                        return (priority[current.structureType] || 0) > (priority[best.structureType] || 0) ? current : best;
-                    }
-                    return (current.hitsMax - current.hits) > (best.hitsMax - best.hits) ? current : best;
-                }, null);
-
-                if(creep.repair(target) == ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, {
-                        visualizePathStyle: {stroke: '#ffff00'},
+                
+                // 选择优先级最高的建筑进行维修
+                if(creep.repair(sortedTargets[0]) == ERR_NOT_IN_RANGE) {
+                    creep.moveTo(sortedTargets[0], {
+                        visualizePathStyle: {stroke: '#ffffff'},
                         reusePath: 5
                     });
                 }

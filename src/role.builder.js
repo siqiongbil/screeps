@@ -12,15 +12,15 @@ module.exports = {
             // 按优先级排序建筑工地
             const targets = creep.room.find(FIND_CONSTRUCTION_SITES);
             if(targets.length) {
-                // 按优先级排序：Spawn > Extension > Tower > Wall > 其他
+                // 使用buildingPlanner中的优先级
+                const buildingPlanner = require('./buildingPlanner');
+                const STRUCTURE_PRIORITY = buildingPlanner.STRUCTURE_PRIORITY;
+                
+                // 按优先级排序
                 const sortedTargets = targets.sort((a, b) => {
-                    const priority = {
-                        [STRUCTURE_SPAWN]: 5,
-                        [STRUCTURE_EXTENSION]: 4,
-                        [STRUCTURE_TOWER]: 3,
-                        [STRUCTURE_WALL]: 1
-                    };
-                    return (priority[b.structureType] || 0) - (priority[a.structureType] || 0);
+                    const priorityA = STRUCTURE_PRIORITY[a.structureType] || 15;
+                    const priorityB = STRUCTURE_PRIORITY[b.structureType] || 15;
+                    return priorityA - priorityB; // 数字越小优先级越高
                 });
 
                 const target = creep.pos.findClosestByPath(sortedTargets);
