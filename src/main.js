@@ -105,6 +105,7 @@ module.exports.loop = function() {
         // 初始化控制台命令
         if(!global.consoleCommandsInitialized) {
             require('console_commands').init();
+            require('commands'); // 加载个性化命令
             global.consoleCommandsInitialized = true;
         }
         

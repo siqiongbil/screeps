@@ -681,5 +681,62 @@ module.exports = {
         room.memory.harvestPositions = result;
         
         return result;
+    },
+
+    // 能源状态阈值
+    ENERGY_THRESHOLDS: {
+        CRITICAL: 0.2,  // 低于20%为危急状态
+        LOW: 0.4,       // 低于40%为低能源状态
+        NORMAL: 0.6,    // 低于60%为正常状态
+        HIGH: 0.8       // 低于80%为高能源状态
+    },
+
+    // 能源状态持续时间
+    ENERGY_STATUS_DURATION: {
+        CRITICAL: 500,  // 危急状态持续500个tick
+        LOW: 300,       // 低能源状态持续300个tick
+        NORMAL: 200,    // 正常状态持续200个tick
+        HIGH: 100       // 高能源状态持续100个tick
+    },
+
+    // 根据控制器等级获取能源阈值
+    getEnergyThresholds: function(rcl) {
+        // 根据控制器等级调整阈值
+        let thresholds = { ...this.ENERGY_THRESHOLDS };
+        
+        // 对于低等级房间，提高阈值
+        if (rcl <= 2) {
+            thresholds.CRITICAL = 0.3;  // 低于30%为危急状态
+            thresholds.LOW = 0.5;       // 低于50%为低能源状态
+        } else if (rcl <= 4) {
+            thresholds.CRITICAL = 0.25; // 低于25%为危急状态
+            thresholds.LOW = 0.45;      // 低于45%为低能源状态
+        }
+        
+        return thresholds;
+    },
+
+    // 检查房间能源状态
+    checkEnergyStatus: function(room) {
+        // 初始化能源状态
+        if (!room.memory.energyStatus) {
+            room.memory.energyStatus = {
+                currentStatus: 'normal',
+                lastStatusChange: Game.time,
+                energyLevel: 0,
+                harvestPositions: this.countHarvestPositions(room)
+            };
+        }
+        
+        // 获取当前能源状态
+        const status = room.memory.energyStatus;
+        
+        // 计算能源水平
+        const energyAvailable = room.energyAvailable;
+        const energyCapacity = room.energyCapacityAvailable;
+        const energyLevel = energyCapacity > 0 ? energyAvailable / energyCapacity : 0;
+        
+        // 更新能源水平
+        status.energyLevel = energyLevel;
     }
 }; 

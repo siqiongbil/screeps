@@ -205,6 +205,218 @@ module.exports = {
             }
         };
         
+        // 添加检查和创建扩展建筑工地的命令
+        global.checkExtensions = function(roomName) {
+            const room = Game.rooms[roomName];
+            if(!room) {
+                console.log(`无法访问房间 ${roomName}`);
+                return;
+            }
+            
+            if(!room.controller || !room.controller.my) {
+                console.log(`房间 ${roomName} 的控制器不属于你`);
+                return;
+            }
+            
+            const rcl = room.controller.level;
+            console.log(`房间 ${roomName} 的控制器等级: ${rcl}`);
+            
+            // 检查当前扩展数量
+            const extensions = room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION
+            });
+            
+            // 检查当前扩展建筑工地数量
+            const extensionSites = room.find(FIND_CONSTRUCTION_SITES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION
+            });
+            
+            // 获取该控制器等级允许的最大扩展数量
+            const maxExtensions = CONTROLLER_STRUCTURES[STRUCTURE_EXTENSION][rcl];
+            
+            console.log(`当前扩展数量: ${extensions.length}/${maxExtensions}`);
+            console.log(`当前扩展建筑工地数量: ${extensionSites.length}`);
+            
+            // 如果已经达到最大数量，不需要创建更多
+            if(extensions.length >= maxExtensions) {
+                console.log(`已达到控制器等级 ${rcl} 允许的最大扩展数量`);
+                return;
+            }
+            
+            // 如果有足够的建筑工地，不需要创建更多
+            if(extensions.length + extensionSites.length >= maxExtensions) {
+                console.log(`已有足够的扩展建筑工地，等待建造完成`);
+                return;
+            }
+            
+            // 计算需要创建的扩展数量
+            const needToCreate = maxExtensions - extensions.length - extensionSites.length;
+            console.log(`需要创建 ${needToCreate} 个扩展建筑工地`);
+            
+            // 创建扩展建筑工地
+            if(needToCreate > 0) {
+                // 获取spawn位置作为中心点
+                const spawn = room.find(FIND_MY_SPAWNS)[0];
+                if(!spawn) {
+                    console.log(`房间 ${roomName} 没有母巢`);
+                    return;
+                }
+                
+                const center = spawn.pos;
+                let created = 0;
+                
+                // 在spawn周围创建扩展
+                // 先尝试在近距离创建
+                for(let radius = 2; radius <= 5; radius++) {
+                    if(created >= needToCreate) break;
+                    
+                    // 在当前半径上尝试创建
+                    for(let dx = -radius; dx <= radius; dx++) {
+                        for(let dy = -radius; dy <= radius; dy++) {
+                            if(created >= needToCreate) break;
+                            
+                            // 只在半径边缘上创建
+                            if(Math.max(Math.abs(dx), Math.abs(dy)) === radius) {
+                                const x = center.x + dx;
+                                const y = center.y + dy;
+                                
+                                // 检查位置是否可以建造
+                                if(x >= 1 && x <= 48 && y >= 1 && y <= 48) {
+                                    const pos = new RoomPosition(x, y, room.name);
+                                    
+                                    // 检查地形
+                                    const terrain = Game.map.getRoomTerrain(room.name);
+                                    if(terrain.get(x, y) === TERRAIN_MASK_WALL) continue;
+                                    
+                                    // 检查是否已有建筑或建筑工地
+                                    const structures = pos.lookFor(LOOK_STRUCTURES);
+                                    const sites = pos.lookFor(LOOK_CONSTRUCTION_SITES);
+                                    
+                                    if(structures.length === 0 && sites.length === 0) {
+                                        // 创建扩展建筑工地
+                                        const result = room.createConstructionSite(x, y, STRUCTURE_EXTENSION);
+                                        
+                                        if(result === OK) {
+                                            created++;
+                                            console.log(`在位置 (${x}, ${y}) 创建了扩展建筑工地`);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                console.log(`成功创建了 ${created} 个扩展建筑工地`);
+                
+                // 如果没有创建足够的扩展，提示玩家
+                if(created < needToCreate) {
+                    console.log(`警告: 只创建了 ${created}/${needToCreate} 个扩展建筑工地，可能是因为找不到合适的位置`);
+                    console.log(`建议: 手动清理一些空间，或者使用buildingPlanner模块规划建筑`);
+                }
+            }
+        };
+        
+        // 添加强制运行建筑规划器的命令
+        global.runBuildingPlanner = function(roomName) {
+            const room = Game.rooms[roomName];
+            if(!room) {
+                console.log(`无法访问房间 ${roomName}`);
+                return;
+            }
+            
+            if(!room.controller || !room.controller.my) {
+                console.log(`房间 ${roomName} 的控制器不属于你`);
+                return;
+            }
+            
+            console.log(`正在为房间 ${roomName} 运行建筑规划器...`);
+            
+            // 获取当前建筑工地数量
+            const sitesBefore = room.find(FIND_CONSTRUCTION_SITES).length;
+            
+            // 运行建筑规划器
+            const buildingPlanner = require('buildingPlanner');
+            buildingPlanner.run(room);
+            
+            // 获取运行后的建筑工地数量
+            const sitesAfter = room.find(FIND_CONSTRUCTION_SITES).length;
+            
+            console.log(`建筑规划器运行完成，创建了 ${sitesAfter - sitesBefore} 个新建筑工地`);
+            
+            // 显示当前建筑工地类型统计
+            const sites = room.find(FIND_CONSTRUCTION_SITES);
+            const sitesByType = _.groupBy(sites, site => site.structureType);
+            
+            console.log(`当前建筑工地 (${sites.length}):`);
+            for(let type in sitesByType) {
+                console.log(`- ${type}: ${sitesByType[type].length}`);
+            }
+        };
+        
+        // 添加显示建筑限制的命令
+        global.showBuildingLimits = function(roomName) {
+            const room = Game.rooms[roomName];
+            if(!room) {
+                console.log(`无法访问房间 ${roomName}`);
+                return;
+            }
+            
+            if(!room.controller || !room.controller.my) {
+                console.log(`房间 ${roomName} 的控制器不属于你`);
+                return;
+            }
+            
+            const rcl = room.controller.level;
+            console.log(`房间 ${roomName} 的控制器等级: ${rcl}`);
+            console.log(`建筑限制:`);
+            
+            // 显示主要建筑的限制
+            const buildingTypes = [
+                STRUCTURE_SPAWN,
+                STRUCTURE_EXTENSION,
+                STRUCTURE_TOWER,
+                STRUCTURE_STORAGE,
+                STRUCTURE_LINK,
+                STRUCTURE_TERMINAL,
+                STRUCTURE_LAB,
+                STRUCTURE_FACTORY,
+                STRUCTURE_OBSERVER,
+                STRUCTURE_NUKER,
+                STRUCTURE_EXTRACTOR
+            ];
+            
+            for(let type of buildingTypes) {
+                const limit = CONTROLLER_STRUCTURES[type][rcl] || 0;
+                const current = room.find(FIND_STRUCTURES, {
+                    filter: s => s.structureType === type
+                }).length;
+                
+                const sites = room.find(FIND_CONSTRUCTION_SITES, {
+                    filter: s => s.structureType === type
+                }).length;
+                
+                console.log(`- ${type}: ${current}/${limit} (建筑工地: ${sites})`);
+            }
+            
+            // 显示特殊建筑的限制
+            console.log(`- ${STRUCTURE_CONTAINER}: ${room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            }).length}/5`);
+            
+            console.log(`- ${STRUCTURE_ROAD}: ${room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_ROAD
+            }).length}/无限制`);
+            
+            console.log(`- ${STRUCTURE_WALL}: ${room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_WALL
+            }).length}/无限制`);
+            
+            console.log(`- ${STRUCTURE_RAMPART}: ${room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_RAMPART
+            }).length}/无限制`);
+        };
+        
         // 添加更多控制台命令...
     }
 };

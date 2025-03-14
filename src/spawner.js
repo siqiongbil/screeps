@@ -6,6 +6,107 @@ const PRIORITY_LEVELS = {
     LOW: 4          // 低优先级（如scout）
 };
 
+// 统一限制定义
+const LIMITS = {
+    // 全局限制
+    GLOBAL: {
+        BASE_PER_ROOM: 3,  // 每个房间的基础倍数
+        MAX_PER_ROOM: 12,  // 每个房间的最大数量
+        EXTRA_SLOTS: 10,   // 额外槽位
+        ABSOLUTE_MAX: 100  // 绝对上限
+    },
+    
+    // 角色限制
+    ROLES: {
+        harvester: {
+            base: 1,
+            rcl2: 3,
+            rcl4: 4,
+            max: 4,
+            body: [WORK, WORK, CARRY, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        carrier: {
+            rcl2: 1,
+            rcl4: 2,
+            max: 3,
+            body: [CARRY, CARRY, MOVE, MOVE],
+            maxParts: 10,
+            lifetime: 1500
+        },
+        upgrader: {
+            base: 1,
+            max: 3,
+            body: [WORK, CARRY, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        builder: {
+            base: 1,
+            max: 3,
+            body: [WORK, CARRY, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        repairer: {
+            base: 1,
+            max: 2,
+            body: [WORK, CARRY, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        defender: {
+            max: 3,
+            body: [ATTACK, ATTACK, MOVE, MOVE],
+            maxParts: 10,
+            lifetime: 1500
+        },
+        healer: {
+            max: 2,
+            body: [HEAL, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        rangedAttacker: {
+            max: 2,
+            body: [RANGED_ATTACK, RANGED_ATTACK, MOVE, MOVE],
+            maxParts: 10,
+            lifetime: 1500
+        },
+        scout: {
+            max: 1,
+            body: [MOVE, MOVE, MOVE],
+            maxParts: 3,
+            lifetime: 1500
+        },
+        mineralHarvester: {
+            max: 1,
+            body: [WORK, WORK, CARRY, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        linkManager: {
+            max: 1,
+            body: [CARRY, CARRY, MOVE, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        nukeManager: {
+            max: 1,
+            body: [CARRY, CARRY, MOVE, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        },
+        storageManager: {
+            max: 1,
+            body: [CARRY, CARRY, MOVE, MOVE],
+            maxParts: 6,
+            lifetime: 1500
+        }
+    }
+};
+
 const ROLE_PRIORITIES = {
     harvester: PRIORITY_LEVELS.EMERGENCY,
     carrier: PRIORITY_LEVELS.CRITICAL,
@@ -229,7 +330,7 @@ class SpawnManager {
         const harvestPositions = energyUtils.countHarvestPositions(room);
         
         // 全局creep数量限制
-        const globalLimit = Math.min(rcl * 3, 12); // RCL 3最多9个creep
+        const globalLimit = Math.min(rcl * LIMITS.GLOBAL.BASE_PER_ROOM, LIMITS.GLOBAL.MAX_PER_ROOM);
         
         // 使用energyDistributor提供的比例（如果可用）
         if(room.memory.creepRatios) {
@@ -250,9 +351,9 @@ class SpawnManager {
             
             // 确保防御单位在有敌人时生成
             if(hostiles > 0) {
-                counts.defender = Math.min(hostiles, 3);
-                counts.healer = Math.floor(hostiles/2);
-                counts.rangedAttacker = Math.min(hostiles, 2);
+                counts.defender = Math.min(hostiles, this.getMaxDefenders(rcl));
+                counts.healer = Math.min(Math.floor(hostiles/2), this.getMaxHealers(rcl));
+                counts.rangedAttacker = Math.min(hostiles, this.getMaxRangedAttackers(rcl));
             }
             
             // 确保总数不超过全局限制
@@ -295,54 +396,39 @@ class SpawnManager {
                 }
             }
             
-            // 控制器等级5及以上时，添加链接管理者
+            // 根据控制器等级添加特殊角色
             if(rcl >= 5) {
-                // 检查房间中是否有链接
                 const links = room.find(FIND_STRUCTURES, {
                     filter: s => s.structureType === STRUCTURE_LINK
                 });
-                
                 if(links.length > 0) {
-                    // 每个房间分配一个链接管理者
-                    counts.linkManager = 1;
+                    counts.linkManager = this.getMaxLinkManagers(rcl);
                 }
             }
             
-            // 控制器等级8及以上时，添加核弹管理者
             if(rcl >= 8) {
-                // 检查房间中是否有核弹发射井
                 const nukers = room.find(FIND_STRUCTURES, {
                     filter: s => s.structureType === STRUCTURE_NUKER
                 });
-                
                 if(nukers.length > 0) {
-                    // 每个房间分配一个核弹管理者
-                    counts.nukeManager = 1;
+                    counts.nukeManager = this.getMaxNukeManagers(rcl);
                 }
             }
             
-            // 控制器等级6及以上时，添加矿物采集者
             if(rcl >= 6) {
-                // 检查房间中是否有矿物和提取器
                 const minerals = room.find(FIND_MINERALS);
                 const extractors = room.find(FIND_STRUCTURES, {
                     filter: s => s.structureType === STRUCTURE_EXTRACTOR
                 });
-                
                 if(minerals.length > 0 && extractors.length > 0) {
-                    // 每个矿物分配一个矿物采集者
-                    counts.mineralHarvester = minerals.length;
+                    counts.mineralHarvester = this.getMaxMineralHarvesters(rcl);
                 }
             }
             
-            // 控制器等级4及以上时，添加存储管理者
             if(rcl >= 4) {
-                // 检查房间中是否有存储
                 const storage = room.storage;
-                
                 if(storage) {
-                    // 每个房间分配一个存储管理者
-                    counts.storageManager = 1;
+                    counts.storageManager = this.getMaxStorageManagers(rcl);
                 }
             }
             
@@ -358,15 +444,15 @@ class SpawnManager {
             upgrader: this.getMaxUpgraders(rcl),
             builder: this.getMaxBuilders(rcl, constructionSites),
             repairer: this.getMaxRepairers(rcl),
-            defender: hostiles > 0 ? Math.min(hostiles, 3) : 0,
-            healer: hostiles > 0 ? Math.floor(hostiles/2) : 0,
-            rangedAttacker: hostiles > 0 ? Math.min(hostiles, 2) : 0,
-            scout: rcl >= 3 ? 1 : 0,
-            mineralHarvester: 0, // 默认为0
-            linkManager: 0, // 默认为0
-            nukeManager: 0, // 默认为0
-            storageManager: 0, // 默认为0
-            carrier: 0 // 默认为0，将在下面根据需求计算
+            defender: hostiles > 0 ? this.getMaxDefenders(rcl) : 0,
+            healer: hostiles > 0 ? this.getMaxHealers(rcl) : 0,
+            rangedAttacker: hostiles > 0 ? this.getMaxRangedAttackers(rcl) : 0,
+            scout: rcl >= 3 ? this.getMaxScouts(rcl) : 0,
+            mineralHarvester: 0,
+            linkManager: 0,
+            nukeManager: 0,
+            storageManager: 0,
+            carrier: 0
         };
         
         // 计算carrier数量，基于存储建筑和资源需求
@@ -388,112 +474,7 @@ class SpawnManager {
         
         // 根据存储建筑、需要能量的建筑和掉落资源计算carrier数量
         if(storageStructures.length > 0 || energyNeedingStructures.length > 0 || droppedResources > 0) {
-            // 基础carrier数量
-            let carrierCount = 1; // 至少保留1个carrier处理掉落资源和基本运输
-            
-            // 根据存储建筑数量增加carrier
-            if(storageStructures.length > 0) {
-                carrierCount += Math.min(Math.floor(storageStructures.length / 2), 2);
-            }
-            
-            // 根据需要能量的建筑数量增加carrier
-            if(energyNeedingStructures.length > 5) {
-                carrierCount += 1;
-            }
-            
-            // 根据控制器等级限制carrier数量
-            counts.carrier = Math.min(carrierCount, this.getMaxCarriers(rcl));
-        }
-        
-        // 控制器等级5及以上时，添加链接管理者
-        if(rcl >= 5) {
-            // 检查房间中是否有链接
-            const links = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_LINK
-            });
-            
-            if(links.length > 0) {
-                // 每个房间分配一个链接管理者
-                counts.linkManager = 1;
-            }
-        }
-        
-        // 控制器等级8及以上时，添加核弹管理者
-        if(rcl >= 8) {
-            // 检查房间中是否有核弹发射井
-            const nukers = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_NUKER
-            });
-            
-            if(nukers.length > 0) {
-                // 每个房间分配一个核弹管理者
-                counts.nukeManager = 1;
-            }
-        }
-        
-        // 控制器等级6及以上时，添加矿物采集者
-        if(rcl >= 6) {
-            // 检查房间中是否有矿物和提取器
-            const minerals = room.find(FIND_MINERALS);
-            const extractors = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTRACTOR
-            });
-            
-            if(minerals.length > 0 && extractors.length > 0) {
-                // 每个矿物分配一个矿物采集者
-                counts.mineralHarvester = minerals.length;
-            }
-        }
-        
-        // 控制器等级4及以上时，添加存储管理者
-        if(rcl >= 4) {
-            // 检查房间中是否有存储
-            const storage = room.storage;
-            
-            if(storage) {
-                // 每个房间分配一个存储管理者
-                counts.storageManager = 1;
-            }
-        }
-        
-        // 确保总数不超过全局限制
-        let total = 0;
-        for(let role in counts) {
-            total += counts[role];
-        }
-        
-        // 如果总数超过限制，按优先级缩减
-        if(total > globalLimit) {
-            // 角色优先级（数字越小优先级越高）
-            const rolePriorities = room.memory.rolePriorities || {
-                harvester: 1,
-                carrier: 2,
-                upgrader: 3,
-                builder: 4,
-                repairer: 5,
-                defender: 1, // 防御单位高优先级
-                healer: 2,
-                rangedAttacker: 2,
-                scout: 6,
-                mineralHarvester: 7,
-                linkManager: 5,
-                nukeManager: 8,
-                storageManager: 5
-            };
-            
-            // 按优先级排序角色
-            const sortedRoles = Object.keys(counts).sort((a, b) => 
-                (rolePriorities[a] || 99) - (rolePriorities[b] || 99)
-            );
-            
-            // 在资源有限时，优先保证高优先级角色的数量
-            let remainingSlots = globalLimit;
-            for(const role of sortedRoles) {
-                const desired = counts[role];
-                counts[role] = Math.min(desired, remainingSlots);
-                remainingSlots -= counts[role];
-                if(remainingSlots <= 0) break;
-            }
+            counts.carrier = this.getMaxCarriers(rcl);
         }
         
         // 根据能源状态动态调整
@@ -710,25 +691,43 @@ class SpawnManager {
         }
     }
 
+    // 将creep生成请求添加到队列
     queueCreep(room, request) {
-        const roomQueue = Memory.spawns.queues[room.name];
-        
-        // 创建新的请求
-        const spawnRequest = {
-            role: request.role,
-            body: request.body,
-            priority: request.priority,
-            timeAdded: Game.time
-        };
-        
-        // 将请求添加到队列并按优先级排序
-        roomQueue.queue.push(spawnRequest);
-        roomQueue.queue.sort((a, b) => a.priority - b.priority);
-        
-        // 限制队列长度
-        if (roomQueue.queue.length > 20) {
-            roomQueue.queue = roomQueue.queue.slice(0, 20);
+        // 初始化房间队列
+        if (!Memory.spawns.queues) {
+            Memory.spawns.queues = {};
         }
+        if (!Memory.spawns.queues[room.name]) {
+            Memory.spawns.queues[room.name] = {
+                queue: [],
+                lastProcessTime: 0
+            };
+        }
+        
+        // 检查是否已经存在相同角色的请求
+        const existingRequest = Memory.spawns.queues[room.name].queue.find(
+            req => req.role === request.role
+        );
+        
+        if (existingRequest) {
+            // 如果存在，更新优先级
+            existingRequest.priority = request.priority;
+            return;
+        }
+        
+        // 添加新请求
+        Memory.spawns.queues[room.name].queue.push({
+            role: request.role,
+            priority: request.priority || 100,
+            body: request.body || this.getCreepBody(request.role, room),
+            memory: request.memory || {}
+        });
+        
+        // 按优先级排序
+        Memory.spawns.queues[room.name].queue.sort((a, b) => a.priority - b.priority);
+        
+        // 记录日志
+        console.log(`房间 ${room.name} 添加了新的creep生成请求: ${request.role} (优先级: ${request.priority || 100})`);
     }
 
     processSpawnQueue(room) {
@@ -752,235 +751,180 @@ class SpawnManager {
         // 如果没有可用的spawn，直接返回
         if (availableSpawns.length === 0) return;
         
-        // 检查全局creep数量限制
-        const totalCreeps = Object.keys(Game.creeps).length;
-        const maxCreeps = this.getGlobalCreepLimit(room);
-        
-        if (totalCreeps >= maxCreeps) {
-            console.log(`房间 ${room.name} 已达到全局creep数量限制 (${totalCreeps}/${maxCreeps})`);
-            return;
-        }
+        // 检查全局限制
+        if (!this.checkLimits(room)) return;
         
         // 获取房间能量状态
-        const energyUtils = require('energyUtils');
-        const emergency = energyUtils.checkEnergyEmergency(room);
+        const energyStatus = room.memory.energyStatus;
+        if (!energyStatus) return;
         
-        // 计算当前房间各角色的creep数量
-        const roomCreeps = _.filter(Game.creeps, creep => creep.room.name === room.name);
-        const roleCounts = {};
-        roomCreeps.forEach(creep => {
-            roleCounts[creep.memory.role] = (roleCounts[creep.memory.role] || 0) + 1;
+        // 获取当前能源状态
+        const currentStatus = energyStatus.currentStatus;
+        const energyLevel = energyStatus.energyLevel;
+        
+        // 获取目标数量
+        const targetCounts = this.getTargetCounts(room);
+        
+        // 获取当前数量
+        const currentCounts = {};
+        for (const role in targetCounts) {
+            currentCounts[role] = _.filter(Game.creeps, c => c.memory.role === role && c.room.name === room.name).length;
+        }
+        
+        // 根据能源状态调整优先级
+        const rolePriorities = room.memory.rolePriorities || {
+            harvester: 1,
+            carrier: 2,
+            upgrader: 3,
+            builder: 4,
+            repairer: 5,
+            defender: 1,
+            healer: 2,
+            rangedAttacker: 2,
+            scout: 6,
+            mineralHarvester: 7,
+            linkManager: 5,
+            nukeManager: 8,
+            storageManager: 5
+        };
+        
+        // 根据能源状态调整优先级
+        if (currentStatus === 'critical') {
+            // 在危急状态下，提高harvester和carrier的优先级
+            rolePriorities.harvester = 0;
+            rolePriorities.carrier = 1;
+        } else if (currentStatus === 'low') {
+            // 在低能源状态下，适度提高harvester和carrier的优先级
+            rolePriorities.harvester = 0.5;
+            rolePriorities.carrier = 1.5;
+        } else if (currentStatus === 'high') {
+            // 在高能源状态下，提高其他角色的优先级
+            rolePriorities.upgrader = 2;
+            rolePriorities.builder = 3;
+            rolePriorities.repairer = 4;
+        }
+        
+        // 更新房间的优先级设置
+        room.memory.rolePriorities = rolePriorities;
+        
+        // 按优先级排序队列
+        roomQueue.queue.sort((a, b) => {
+            const priorityA = rolePriorities[a.role] || 99;
+            const priorityB = rolePriorities[b.role] || 99;
+            return priorityA - priorityB;
         });
-        const roomCreepCount = roomCreeps.length;
         
-        // 根据紧急状态调整队列优先级
-        if(emergency.isEmergency) {
-            // 重新计算各角色的目标数量
-            const targetCounts = {};
-            if(emergency.adjustedRatios) {
-                for(let role in emergency.adjustedRatios) {
-                    targetCounts[role] = Math.ceil(roomCreepCount * emergency.adjustedRatios[role]);
-                }
-            }
+        // 处理队列中的每个请求
+        for (let i = roomQueue.queue.length - 1; i >= 0; i--) {
+            const request = roomQueue.queue[i];
+            const role = request.role;
             
-            // 检查harvester数量是否足够
-            const harvesterCount = roleCounts['harvester'] || 0;
-            const targetHarvesterCount = targetCounts['harvester'] || Math.ceil(roomCreepCount * 0.3);
-            
-            // 计算harvester的最大数量限制
-            const harvestPositions = energyUtils.countHarvestPositions(room);
-            const rcl = room.controller ? room.controller.level : 0;
-            const maxHarvesters = rcl <= 2 ? harvestPositions : 
-                                 rcl <= 4 ? Math.min(harvestPositions, rcl * 1.5) : 
-                                 Math.min(harvestPositions, rcl * 2);
-            
-            // 确保目标harvester数量不超过最大限制
-            const adjustedTargetHarvesterCount = Math.min(targetHarvesterCount, Math.floor(maxHarvesters));
-            
-            // 检查是否需要更多harvester
-            const needsHarvesters = harvesterCount < adjustedTargetHarvesterCount;
-            
-            // 在紧急状态下，强制重置所有请求的优先级
-            roomQueue.queue.forEach(req => {
-                // 保存原始优先级
-                if(!req.originalPriority && req.priority !== undefined) {
-                    req.originalPriority = req.priority;
-                }
-                
-                // 设置新的优先级
-                if(req.role === 'harvester') {
-                    // harvester始终有最高优先级
-                    req.priority = -100;
-                } else if(req.role === 'carrier') {
-                    // carrier次之
-                    req.priority = 100;
-                } else if(req.role === 'builder' || req.role === 'repairer') {
-                    // builder和repairer再次之
-                    req.priority = 200;
-                } else {
-                    // 其他角色最低优先级
-                    req.priority = 300;
-                }
-            });
-            
-            // 重新排序队列
-            roomQueue.queue.sort((a, b) => a.priority - b.priority);
-            
-            // 在紧急情况下，记录调整后的队列状态
-            if(emergency.level >= 2) {
-                console.log(`房间 ${room.name} 进入能量紧急状态: ${emergency.reason}`);
-                console.log(`[紧急] 房间 ${room.name} 能量状态: ${emergency.reason}, 调整后的队列:`);
-                roomQueue.queue.slice(0, 3).forEach((req, i) => {
-                    console.log(`  ${i+1}. ${req.role} (优先级: ${req.priority})`);
-                });
-            }
-            
-            // 在紧急状态下，检查是否需要强制生产harvester
-            if(emergency.level >= 2 && needsHarvesters) {
-                // 检查队列中是否已有harvester请求
-                const harvesterRequestsInQueue = roomQueue.queue.filter(req => req.role === 'harvester').length;
-                
-                // 检查正在生产的harvester数量
-                const harvesterSpawning = room.find(FIND_MY_SPAWNS).filter(spawn => 
-                    spawn.spawning && 
-                    Game.creeps[spawn.spawning.name] && 
-                    Game.creeps[spawn.spawning.name].memory.role === 'harvester'
-                ).length;
-                
-                // 计算总的harvester数量（现有 + 正在生产 + 队列中）
-                const totalHarvesters = harvesterCount + harvesterSpawning + harvesterRequestsInQueue;
-                
-                // 如果总数仍然小于目标数量，添加新的harvester请求
-                if(totalHarvesters < adjustedTargetHarvesterCount) {
-                    console.log(`[紧急] 房间 ${room.name} 需要更多harvester (当前: ${harvesterCount}, 生产中: ${harvesterSpawning}, 队列中: ${harvesterRequestsInQueue}, 目标: ${adjustedTargetHarvesterCount})`);
-                    
-                    this.queueCreep(room, {
-                        role: 'harvester',
-                        priority: -100, // 最高优先级
-                        body: [WORK, CARRY, MOVE], // 最基础的体型
-                        memory: {
-                            emergency: true
-                        }
-                    });
-                    
-                    // 重新排序队列
-                    roomQueue.queue.sort((a, b) => a.priority - b.priority);
-                }
-            }
-        } else {
-            // 如果不是紧急状态，恢复原始优先级
-            roomQueue.queue.forEach(req => {
-                if(req.originalPriority !== undefined) {
-                    req.priority = req.originalPriority;
-                    delete req.originalPriority;
-                }
-            });
-            
-            // 重新排序队列
-            roomQueue.queue.sort((a, b) => a.priority - b.priority);
-        }
-        
-        // 处理队列中的请求
-        let processedCount = 0;
-        const maxProcessPerTick = Math.min(availableSpawns.length, roomQueue.queue.length);
-        
-        // 在紧急状态下，检查是否需要强制生产harvester
-        let forceHarvester = false;
-        if(emergency.isEmergency && emergency.level >= 2) {
-            const harvesterCount = roleCounts['harvester'] || 0;
-            
-            // 计算harvester的最大数量限制
-            const harvestPositions = energyUtils.countHarvestPositions(room);
-            const rcl = room.controller ? room.controller.level : 0;
-            const maxHarvesters = rcl <= 2 ? harvestPositions : 
-                                 rcl <= 4 ? Math.min(harvestPositions, rcl * 1.5) : 
-                                 Math.min(harvestPositions, rcl * 2);
-            
-            // 计算目标harvester数量，并确保不超过最大限制
-            const targetHarvesterCount = emergency.adjustedRatios ? 
-                Math.ceil(roomCreepCount * emergency.adjustedRatios.harvester) : 
-                Math.ceil(roomCreepCount * 0.3);
-            
-            const adjustedTargetHarvesterCount = Math.min(targetHarvesterCount, Math.floor(maxHarvesters));
-            
-            forceHarvester = harvesterCount < adjustedTargetHarvesterCount;
-        }
-        
-        for (let i = 0; i < maxProcessPerTick; i++) {
-            // 获取队列中的请求
-            const request = roomQueue.queue[i - processedCount];
-            
-            // 检查是否有足够的能量
-            const bodyCost = this.calculateBodyCost(request.body);
-            if (room.energyAvailable < bodyCost) continue;
-            
-            // 在紧急状态下，如果需要强制生产harvester，跳过非harvester请求
-            if(forceHarvester && request.role !== 'harvester') {
+            // 检查是否达到目标数量
+            if (currentCounts[role] >= targetCounts[role]) {
+                roomQueue.queue.splice(i, 1);
                 continue;
             }
             
-            // 获取一个可用的母巢
-            const spawn = availableSpawns[0];
+            // 检查是否有足够的能量
+            const body = this.getCreepBody(role, room);
+            const cost = this.calculateBodyCost(body);
             
-            // 尝试孵化
-            const creepName = this.generateCreepName(request.role);
-            const result = spawn.spawnCreep(request.body, creepName, {
-                memory: {
-                    role: request.role,
-                    room: room.name,
-                    working: false,
-                    spawnTime: Game.time,
-                    spawnName: spawn.name,
-                    emergency: request.memory && request.memory.emergency
+            if (room.energyAvailable >= cost) {
+                // 尝试生成creep
+                const spawn = availableSpawns[0];
+                const result = spawn.spawnCreep(body, `${role}_${Game.time}`, {
+                    memory: { role: role }
+                });
+                
+                if (result === OK) {
+                    // 生成成功，从队列中移除
+                    roomQueue.queue.splice(i, 1);
+                    break;
                 }
-            });
-            
-            // 如果孵化成功，从队列中移除请求并从可用母巢列表中移除已使用的母巢
-            if (result === OK) {
-                roomQueue.queue.splice(i - processedCount, 1);
-                availableSpawns.shift();
-                processedCount++;
-                
-                // 更新角色计数
-                roleCounts[request.role] = (roleCounts[request.role] || 0) + 1;
-                
-                console.log(`房间 ${room.name} 的母巢 ${spawn.name} 开始孵化 ${request.role}: ${creepName}`);
-                
-                // 更新统计信息
-                this.recordSpawn(room, request);
-                
-                // 可视化孵化过程
-                this.visualizeSpawning(spawn, request.role);
-                
-                // 更新最后处理时间，用于能量紧急状态检测
-                roomQueue.lastProcessedTime = Game.time;
             }
         }
     }
 
     calculateBodyCost(body) {
-        return body.reduce((cost, part) => cost + BODYPART_COST[part], 0);
+        let cost = 0;
+        for (const part of body) {
+            switch (part) {
+                case WORK:
+                    cost += 100;
+                    break;
+                case CARRY:
+                    cost += 50;
+                    break;
+                case MOVE:
+                    cost += 50;
+                    break;
+                case ATTACK:
+                    cost += 80;
+                    break;
+                case RANGED_ATTACK:
+                    cost += 150;
+                    break;
+                case HEAL:
+                    cost += 250;
+                    break;
+                case CLAIM:
+                    cost += 600;
+                    break;
+                case TOUGH:
+                    cost += 10;
+                    break;
+            }
+        }
+        return cost;
     }
 
+    // 生成creep名称
     generateCreepName(role) {
-        return role.charAt(0).toUpperCase() + role.slice(1) + Game.time;
+        // 获取当前tick
+        const tick = Game.time;
+        
+        // 生成随机字符串
+        const randomStr = Math.random().toString(36).substring(2, 5);
+        
+        // 组合名称
+        return `${role}_${tick}_${randomStr}`;
     }
 
+    // 记录creep生成统计信息
     recordSpawn(room, request) {
+        // 初始化统计信息
+        if (!Memory.spawns.stats) {
+            Memory.spawns.stats = {};
+        }
         if (!Memory.spawns.stats[room.name]) {
             Memory.spawns.stats[room.name] = {
-                spawns: {},
-                totalSpawns: 0
+                total: 0,
+                byRole: {},
+                byBody: {},
+                lastSpawn: 0,
+                spawnTimes: []
             };
         }
         
         const stats = Memory.spawns.stats[room.name];
-        stats.totalSpawns++;
         
-        if (!stats.spawns[request.role]) {
-            stats.spawns[request.role] = 0;
-        }
-        stats.spawns[request.role]++;
+        // 更新统计信息
+        stats.total++;
+        stats.byRole[request.role] = (stats.byRole[request.role] || 0) + 1;
+        
+        // 记录身体配置
+        const bodyKey = request.body.map(part => BODYPART_COST[part]).join(',');
+        stats.byBody[bodyKey] = (stats.byBody[bodyKey] || 0) + 1;
+        
+        // 记录生成时间
+        stats.lastSpawn = Game.time;
+        stats.spawnTimes.push(Game.time);
+        
+        // 只保留最近1000个tick的生成记录
+        stats.spawnTimes = stats.spawnTimes.filter(time => Game.time - time <= 1000);
+        
+        // 记录日志
+        console.log(`房间 ${room.name} 生成了新的 ${request.role} (总数: ${stats.total})`);
     }
 
     updateStats(room) {
@@ -988,9 +932,9 @@ class SpawnManager {
         if (!stats) return;
         
         console.log(`房间 ${room.name} 孵化统计:
-            总孵化数: ${stats.totalSpawns}
+            总孵化数: ${stats.total}
             角色分布:
-            ${Object.entries(stats.spawns)
+            ${Object.entries(stats.byRole)
                 .map(([role, count]) => `${role}: ${count}`)
                 .join('\n            ')}`);
     }
@@ -1016,31 +960,42 @@ class SpawnManager {
         return priorities[role] || 0;
     }
 
-    // 添加可视化孵化过程的方法
+    // 可视化creep生成过程
     visualizeSpawning(spawn, role) {
-        const visual = new RoomVisual(spawn.room.name);
+        // 获取生成进度
+        const spawningCreep = Game.creeps[spawn.spawning.name];
+        if (!spawningCreep) return;
         
-        // 在母巢上方显示正在孵化的角色
-        visual.text(
-            `🥚 ${role}`,
+        // 计算生成进度百分比
+        const progress = (spawningCreep.ticksToLive / LIMITS.ROLES[role].lifetime) * 100;
+        
+        // 创建进度条
+        const barLength = 10;
+        const filledLength = Math.floor(progress / 100 * barLength);
+        const emptyLength = barLength - filledLength;
+        const progressBar = '█'.repeat(filledLength) + '░'.repeat(emptyLength);
+        
+        // 显示生成信息
+        spawn.room.visual.text(
+            `正在生成 ${role} ${progressBar} ${Math.floor(progress)}%`,
             spawn.pos.x,
-            spawn.pos.y - 0.5,
-            {color: 'yellow', font: 0.5, align: 'center'}
+            spawn.pos.y - 1,
+            {
+                align: 'center',
+                color: '#ffffff'
+            }
         );
         
-        // 添加到房间内存中，以便可视化模块使用
-        if (!spawn.room.memory.visualizer) {
-            spawn.room.memory.visualizer = {};
-        }
-        
-        if (!spawn.room.memory.visualizer.spawns) {
-            spawn.room.memory.visualizer.spawns = {};
-        }
-        
-        spawn.room.memory.visualizer.spawns[spawn.name] = {
-            role: role,
-            startTime: Game.time
-        };
+        // 显示剩余时间
+        spawn.room.visual.text(
+            `${spawningCreep.ticksToLive} ticks`,
+            spawn.pos.x,
+            spawn.pos.y + 1,
+            {
+                align: 'center',
+                color: '#ffffff'
+            }
+        );
     }
 
     // 添加检查能量自动再生的方法
@@ -1197,84 +1152,287 @@ class SpawnManager {
 
     // 获取全局creep数量限制
     getGlobalCreepLimit(room) {
-        // 基于控制器等级计算每个房间的基础限制
-        const rcl = room.controller.level;
-        const baseLimit = Math.min(rcl * 3, 12);
-        
-        // 计算所有我的房间
+        // 获取所有我的房间
         const myRooms = _.filter(Game.rooms, r => r.controller && r.controller.my);
         
-        // 计算全局限制 - 每个房间的基础限制之和，加上一些额外的余量
-        let globalLimit = 0;
+        // 计算每个房间的基础限制
+        let totalLimit = 0;
         for (const r of myRooms) {
-            const roomRcl = r.controller.level;
-            globalLimit += Math.min(roomRcl * 3, 12);
+            const rcl = r.controller.level;
+            totalLimit += Math.min(
+                rcl * LIMITS.GLOBAL.BASE_PER_ROOM,
+                LIMITS.GLOBAL.MAX_PER_ROOM
+            );
         }
         
-        // 添加一些额外的余量用于远征和防御
-        globalLimit += 10;
+        // 添加额外的余量
+        totalLimit += LIMITS.GLOBAL.EXTRA_SLOTS;
         
-        // 设置一个绝对上限，防止内存溢出
-        return Math.min(globalLimit, 100);
+        // 确保不超过绝对上限
+        return Math.min(totalLimit, LIMITS.GLOBAL.ABSOLUTE_MAX);
     }
 
     // 根据能源状态动态调整目标数量
     adjustTargetCountsByEnergyStatus(counts, room) {
-        // 获取能源状态
-        let energyStatus = 'normal';
-        if(room.memory.energyDistributor && room.memory.energyDistributor.status) {
-            energyStatus = room.memory.energyDistributor.status.level || 'normal';
+        const energyStatus = room.memory.energyStatus;
+        if (!energyStatus) return;
+        
+        // 获取当前能源状态
+        const currentStatus = energyStatus.currentStatus;
+        const energyLevel = energyStatus.energyLevel;
+        
+        // 根据能源状态调整数量
+        switch(currentStatus) {
+            case 'critical':
+                // 在危急状态下，增加harvester和carrier的数量
+                counts.harvester = Math.min(
+                    counts.harvester * 1.5,
+                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions)
+                );
+                counts.carrier = Math.min(
+                    counts.carrier * 1.5,
+                    this.getMaxCarriers(room.controller.level)
+                );
+                // 减少其他角色的数量
+                counts.upgrader = Math.max(1, Math.floor(counts.upgrader * 0.5));
+                counts.builder = Math.max(1, Math.floor(counts.builder * 0.5));
+                counts.repairer = Math.max(1, Math.floor(counts.repairer * 0.5));
+                break;
+                
+            case 'low':
+                // 在低能源状态下，适度增加harvester和carrier的数量
+                counts.harvester = Math.min(
+                    counts.harvester * 1.2,
+                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions)
+                );
+                counts.carrier = Math.min(
+                    counts.carrier * 1.2,
+                    this.getMaxCarriers(room.controller.level)
+                );
+                // 适度减少其他角色的数量
+                counts.upgrader = Math.max(1, Math.floor(counts.upgrader * 0.8));
+                counts.builder = Math.max(1, Math.floor(counts.builder * 0.8));
+                counts.repairer = Math.max(1, Math.floor(counts.repairer * 0.8));
+                break;
+                
+            case 'high':
+                // 在高能源状态下，可以增加其他角色的数量
+                counts.upgrader = Math.min(
+                    counts.upgrader * 1.2,
+                    this.getMaxUpgraders(room.controller.level)
+                );
+                counts.builder = Math.min(
+                    counts.builder * 1.2,
+                    this.getMaxBuilders(room.controller.level, room.find(FIND_CONSTRUCTION_SITES).length)
+                );
+                counts.repairer = Math.min(
+                    counts.repairer * 1.2,
+                    this.getMaxRepairers(room.controller.level)
+                );
+                break;
         }
         
-        const energyUtils = require('energyUtils');
+        // 确保总数不超过全局限制
+        let total = 0;
+        for(let role in counts) {
+            total += counts[role];
+        }
         
-        // 在能源紧急状态下，优先保证harvester和carrier
-        if(energyStatus === 'critical') {
-            // 增加harvester和carrier的目标数量
-            counts.harvester = Math.min(counts.harvester + 1, this.getMaxHarvesters(room.controller.level, energyUtils.countHarvestPositions(room)));
-            if(counts.carrier) {
-                counts.carrier = Math.min(counts.carrier + 1, this.getMaxCarriers(room.controller.level));
-            }
+        const globalLimit = Math.min(
+            room.controller.level * LIMITS.GLOBAL.BASE_PER_ROOM,
+            LIMITS.GLOBAL.MAX_PER_ROOM
+        );
+        
+        if(total > globalLimit) {
+            // 角色优先级（数字越小优先级越高）
+            const rolePriorities = room.memory.rolePriorities || {
+                harvester: 1,
+                carrier: 2,
+                upgrader: 3,
+                builder: 4,
+                repairer: 5,
+                defender: 1,
+                healer: 2,
+                rangedAttacker: 2,
+                scout: 6,
+                mineralHarvester: 7,
+                linkManager: 5,
+                nukeManager: 8,
+                storageManager: 5
+            };
             
-            // 减少其他角色的目标数量
-            for(let role in counts) {
-                if(role !== 'harvester' && role !== 'carrier' && role !== 'defender' && role !== 'healer' && role !== 'rangedAttacker') {
-                    counts[role] = Math.max(Math.floor(counts[role] * 0.5), 0);
-                }
-            }
-        } else if(energyStatus === 'low') {
-            // 在能源低状态下，略微调整
-            for(let role in counts) {
-                if(role !== 'harvester' && role !== 'carrier' && role !== 'defender' && role !== 'healer' && role !== 'rangedAttacker') {
-                    counts[role] = Math.max(Math.floor(counts[role] * 0.8), 0);
-                }
+            // 按优先级排序角色
+            const sortedRoles = Object.keys(counts).sort((a, b) => 
+                (rolePriorities[a] || 99) - (rolePriorities[b] || 99)
+            );
+            
+            // 在资源有限时，优先保证高优先级角色的数量
+            let remainingSlots = globalLimit;
+            for(const role of sortedRoles) {
+                const desired = counts[role];
+                counts[role] = Math.min(desired, remainingSlots);
+                remainingSlots -= counts[role];
+                if(remainingSlots <= 0) break;
             }
         }
-        
-        return counts;
     }
     
-    // 获取各角色的最大数量
+    // 获取harvester的最大数量
     getMaxHarvesters(rcl, harvestPositions) {
-        return Math.min(harvestPositions, rcl <= 2 ? rcl + 1 : 
-                        rcl <= 4 ? Math.min(rcl * 1.5, 4) : 
-                        Math.min(rcl, 4));
+        const limits = LIMITS.ROLES.harvester;
+        
+        // 根据控制器等级和可开采位置计算最大数量
+        let maxCount = harvestPositions;
+        
+        // 根据控制器等级调整
+        if (rcl <= 2) {
+            maxCount = Math.min(maxCount, limits.rcl2);
+        } else if (rcl <= 4) {
+            maxCount = Math.min(maxCount, limits.rcl4);
+        } else {
+            maxCount = Math.min(maxCount, limits.max);
+        }
+        
+        return maxCount;
     }
     
     getMaxCarriers(rcl) {
-        return rcl <= 2 ? 1 : rcl <= 4 ? 2 : 3;
+        const limits = LIMITS.ROLES.carrier;
+        
+        // 根据控制器等级返回最大数量
+        if (rcl <= 2) {
+            return limits.rcl2;
+        } else if (rcl <= 4) {
+            return limits.rcl4;
+        } else {
+            return limits.max;
+        }
     }
     
     getMaxUpgraders(rcl) {
-        return Math.min(rcl + 1, 3);
+        const limits = LIMITS.ROLES.upgrader;
+        
+        // 根据控制器等级计算最大数量
+        const maxCount = Math.min(rcl + limits.base, limits.max);
+        
+        return maxCount;
     }
     
     getMaxBuilders(rcl, constructionSites) {
-        return constructionSites > 0 ? Math.min(rcl, 3) : 0;
+        const limits = LIMITS.ROLES.builder;
+        
+        // 如果没有建筑工地，返回0
+        if (constructionSites === 0) {
+            return 0;
+        }
+        
+        // 根据控制器等级和建筑工地数量计算最大数量
+        const maxCount = Math.min(rcl, limits.max);
+        
+        return maxCount;
     }
     
     getMaxRepairers(rcl) {
-        return Math.min(Math.floor(rcl/2), 2);
+        const limits = LIMITS.ROLES.repairer;
+        return Math.min(Math.floor(rcl/2), limits.max);
+    }
+
+    getMaxDefenders(rcl) {
+        return LIMITS.ROLES.defender.max;
+    }
+
+    getMaxHealers(rcl) {
+        return LIMITS.ROLES.healer.max;
+    }
+
+    getMaxRangedAttackers(rcl) {
+        const limits = LIMITS.ROLES.rangedAttacker;
+        
+        // 返回最大数量限制
+        return limits.max;
+    }
+
+    getMaxScouts(rcl) {
+        const limits = LIMITS.ROLES.scout;
+        
+        // 返回最大数量限制
+        return limits.max;
+    }
+
+    // 获取mineralHarvester的最大数量
+    getMaxMineralHarvesters(rcl) {
+        const limits = LIMITS.ROLES.mineralHarvester;
+        
+        // 返回最大数量限制
+        return limits.max;
+    }
+
+    getMaxLinkManagers(rcl) {
+        return LIMITS.ROLES.linkManager.max;
+    }
+
+    getMaxNukeManagers(rcl) {
+        return LIMITS.ROLES.nukeManager.max;
+    }
+
+    getMaxStorageManagers(rcl) {
+        return LIMITS.ROLES.storageManager.max;
+    }
+
+    // 添加限制检查方法
+    checkLimits(room) {
+        const totalCreeps = Object.keys(Game.creeps).length;
+        const maxCreeps = this.getGlobalCreepLimit(room);
+        
+        if (totalCreeps >= maxCreeps) {
+            console.log(`房间 ${room.name} 已达到全局creep数量限制 (${totalCreeps}/${maxCreeps})`);
+            return false;
+        }
+        
+        return true;
+    }
+
+    // 根据角色和房间状态获取creep的身体配置
+    getCreepBody(role, room) {
+        const rcl = room.controller.level;
+        const energyAvailable = room.energyAvailable;
+        const energyCapacity = room.energyCapacityAvailable;
+        
+        // 获取角色特定的身体配置
+        const roleConfig = LIMITS.ROLES[role];
+        if (!roleConfig) {
+            console.log(`未知角色: ${role}`);
+            return [WORK, CARRY, MOVE];
+        }
+        
+        // 获取基础身体配置
+        let body = roleConfig.body;
+        
+        // 根据控制器等级调整身体大小
+        const maxParts = Math.min(
+            Math.floor(energyCapacity / 200), // 每个部分200能量
+            roleConfig.maxParts
+        );
+        
+        // 确保身体大小不超过最大限制
+        if (body.length > maxParts) {
+            body = body.slice(0, maxParts);
+        }
+        
+        // 根据可用能量调整身体大小
+        if (energyAvailable < energyCapacity) {
+            const affordableParts = Math.floor(energyAvailable / 200);
+            if (affordableParts < body.length) {
+                body = body.slice(0, affordableParts);
+            }
+        }
+        
+        // 确保至少有一个基本部分
+        if (body.length === 0) {
+            body = [WORK, CARRY, MOVE];
+        }
+        
+        return body;
     }
 }
 
