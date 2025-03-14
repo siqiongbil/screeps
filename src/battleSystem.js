@@ -1,4 +1,4 @@
-const utils = require('utils');
+const energyUtils = require('energyUtils');
 
 module.exports = {
     // 主运行函数
@@ -77,17 +77,12 @@ module.exports = {
         
         // 调整creep角色
         this.adjustCreepRoles(room, threats);
-        
-        // 发送求援信号（如果需要）
-        if(threats.threatLevel >= 4) {
-            this.requestReinforcements(room);
-        }
     },
 
     // 和平时期操作
     peacetimeOperations: function(room) {
         // 检查能量紧急状态
-        const emergency = utils.checkEnergyEmergency(room);
+        const emergency = energyUtils.checkEnergyEmergency(room);
         if(emergency.isEmergency) {
             this.handleEnergyEmergency(room, emergency);
         }
@@ -99,7 +94,6 @@ module.exports = {
     // 检查是否需要激活安全模式
     checkSafeMode: function(room, threatLevel) {
         if(!room.controller.safeMode && threatLevel >= 4) {
-            const cost = CONTROLLER_SAFEMODE_COST;
             if(room.controller.activateSafeMode() === OK) {
                 console.log(`房间 ${room.name} 激活了安全模式`);
             }
@@ -113,9 +107,6 @@ module.exports = {
         });
         
         if(towers.length === 0) return;
-        
-        // 计算总伤害
-        const totalTowerDamage = towers.length * 600;
         
         // 选择优先目标
         let primaryTarget = this.selectPrimaryTarget(threats);
@@ -162,49 +153,61 @@ module.exports = {
 
     // 请求防御creep
     requestDefenseCreeps: function(room, requirements) {
-        const spawn = room.find(FIND_MY_SPAWNS)[0];
-        if(!spawn || spawn.spawning) return;
-        
         const defenders = _.filter(Game.creeps, c => c.memory.role === 'defender' && c.room.name === room.name);
         const healers = _.filter(Game.creeps, c => c.memory.role === 'healer' && c.room.name === room.name);
         const ranged = _.filter(Game.creeps, c => c.memory.role === 'rangedAttacker' && c.room.name === room.name);
         
+        // 使用队列系统请求creep而不是直接生成
+        if(!Memory.spawns) {
+            Memory.spawns = {
+                queues: {},
+                stats: {}
+            };
+        }
+        
+        if(!Memory.spawns.queues[room.name]) {
+            Memory.spawns.queues[room.name] = {
+                queue: [],
+                lastCheck: Game.time,
+                emergencyMode: false,
+                energyRequests: []
+            };
+        }
+        
+        // 添加到队列
         if(defenders.length < requirements.defenders) {
-            this.spawnDefender(spawn, room.energyAvailable);
+            Memory.spawns.queues[room.name].energyRequests.push({
+                role: 'defender',
+                priority: 1, // 高优先级
+                body: this.getDefenderBody(room.energyAvailable),
+                memory: {
+                    role: 'defender',
+                    working: false
+                }
+            });
         }
         else if(healers.length < requirements.healers) {
-            this.spawnHealer(spawn, room.energyAvailable);
+            Memory.spawns.queues[room.name].energyRequests.push({
+                role: 'healer',
+                priority: 1, // 高优先级
+                body: this.getHealerBody(room.energyAvailable),
+                memory: {
+                    role: 'healer',
+                    working: false
+                }
+            });
         }
         else if(ranged.length < requirements.ranged) {
-            this.spawnRangedAttacker(spawn, room.energyAvailable);
+            Memory.spawns.queues[room.name].energyRequests.push({
+                role: 'rangedAttacker',
+                priority: 1, // 高优先级
+                body: this.getRangedAttackerBody(room.energyAvailable),
+                memory: {
+                    role: 'rangedAttacker',
+                    working: false
+                }
+            });
         }
-    },
-
-    // 生成防御者
-    spawnDefender: function(spawn, energy) {
-        const name = 'Defender' + Game.time;
-        const body = this.getDefenderBody(energy);
-        spawn.spawnCreep(body, name, {
-            memory: {role: 'defender', working: false}
-        });
-    },
-
-    // 生成治疗者
-    spawnHealer: function(spawn, energy) {
-        const name = 'Healer' + Game.time;
-        const body = this.getHealerBody(energy);
-        spawn.spawnCreep(body, name, {
-            memory: {role: 'healer', working: false}
-        });
-    },
-
-    // 生成远程攻击者
-    spawnRangedAttacker: function(spawn, energy) {
-        const name = 'RangedAttacker' + Game.time;
-        const body = this.getRangedAttackerBody(energy);
-        spawn.spawnCreep(body, name, {
-            memory: {role: 'rangedAttacker', working: false}
-        });
     },
 
     // 获取防御者身体部件
@@ -243,19 +246,6 @@ module.exports = {
     // 处理能量紧急状态
     handleEnergyEmergency: function(room, emergency) {
         console.log(`房间 ${room.name} 进入能量紧急状态: ${emergency.reason}`);
-        
-        // 暂停非必要的creep生成
-        if(emergency.level >= 2) {
-            room.memory.pauseSpawning = true;
-        }
-        
-        // 调整防御塔能量使用
-        const towers = room.find(FIND_MY_STRUCTURES, {
-            filter: {structureType: STRUCTURE_TOWER}
-        });
-        towers.forEach(tower => {
-            tower.memory.emergencyMode = true;
-        });
     },
 
     // 维修建筑
