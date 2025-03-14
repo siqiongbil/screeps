@@ -62,7 +62,13 @@ module.exports = {
                 priorities: this.getDistributionPriorities(rcl),
                 targets: {}
             },
-            creepRatios: this.getCreepRatios(rcl, 'normal'),
+            creepRatios: {
+                harvester: 0.3,
+                carrier: 0.2,
+                upgrader: 0.2,
+                builder: 0.2,
+                repairer: 0.1
+            },
             stats: {
                 collectionRate: [],
                 distributionRate: [],
@@ -129,337 +135,6 @@ module.exports = {
         }
         
         return priorities;
-    },
-    
-    // 根据控制器等级和能源状态获取creep比例
-    getCreepRatios: function(rcl, energyStatus) {
-        let ratios = {};
-        
-        // 根据控制器等级设置基础比例
-        if(rcl <= 2) {
-            // 控制器1-2级：专注于能源收集和升级
-            ratios = {
-                harvester: 0.40,
-                upgrader: 0.35,
-                builder: 0.25
-            };
-            
-            // 检查是否有容器或掉落资源
-            const room = this.getCurrentRoom();
-            if(room) {
-                const containers = room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_CONTAINER
-                });
-                
-                const droppedResources = room.find(FIND_DROPPED_RESOURCES).length;
-                
-                // 如果有容器或掉落资源，添加一个carrier
-                if(containers.length > 0 || droppedResources > 0) {
-                    ratios.carrier = 0.15;
-                    
-                    // 从其他角色中均匀减少比例
-                    ratios.harvester -= 0.05;
-                    ratios.upgrader -= 0.05;
-                    ratios.builder -= 0.05;
-                }
-            }
-        } else if(rcl <= 4) {
-            // 控制器3-4级：平衡发展
-            ratios = {
-                harvester: 0.30,
-                upgrader: 0.25,
-                builder: 0.25,
-                repairer: 0.10
-            };
-            
-            // 检查存储建筑和资源需求
-            const room = this.getCurrentRoom();
-            if(room) {
-                const storageStructures = room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_STORAGE || 
-                                s.structureType === STRUCTURE_CONTAINER
-                });
-                
-                const energyNeedingStructures = room.find(FIND_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_SPAWN || 
-                                s.structureType === STRUCTURE_EXTENSION || 
-                                s.structureType === STRUCTURE_TOWER) && 
-                                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                });
-                
-                const droppedResources = room.find(FIND_DROPPED_RESOURCES).length;
-                
-                // 根据存储建筑和资源需求计算carrier比例
-                let carrierRatio = 0;
-                
-                if(storageStructures.length > 0 || energyNeedingStructures.length > 0 || droppedResources > 0) {
-                    // 基础carrier比例
-                    carrierRatio = 0.10;
-                    
-                    // 根据存储建筑数量增加比例
-                    if(storageStructures.length >= 3) {
-                        carrierRatio += 0.05;
-                    }
-                    
-                    // 根据需要能量的建筑数量增加比例
-                    if(energyNeedingStructures.length > 5) {
-                        carrierRatio += 0.05;
-                    }
-                    
-                    // 添加carrier比例
-                    ratios.carrier = carrierRatio;
-                    
-                    // 从其他角色中均匀减少比例
-                    const reduction = carrierRatio / 4;
-                    ratios.harvester -= reduction;
-                    ratios.upgrader -= reduction;
-                    ratios.builder -= reduction;
-                    ratios.repairer -= reduction;
-                }
-            }
-            
-            // 控制器4级：添加存储管理者
-            if(rcl === 4) {
-                // 检查房间中是否有存储
-                const room = this.getCurrentRoom();
-                if(room && room.storage) {
-                    // 添加存储管理者
-                    ratios.storageManager = 0.10;
-                    
-                    // 从其他角色中均匀减少比例
-                    const reduction = 0.10 / (Object.keys(ratios).length - 1);
-                    for(let role in ratios) {
-                        if(role !== 'storageManager') {
-                            ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                        }
-                    }
-                }
-            }
-        } else if(rcl <= 6) {
-            // 控制器5-6级：增加专业角色
-            ratios = {
-                harvester: 0.20,
-                upgrader: 0.15,
-                builder: 0.15,
-                repairer: 0.10,
-                scout: 0.05,
-                defender: 0.05
-            };
-            
-            // 检查存储建筑和资源需求
-            const room = this.getCurrentRoom();
-            if(room) {
-                const storageStructures = room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_STORAGE || 
-                                s.structureType === STRUCTURE_CONTAINER
-                });
-                
-                const energyNeedingStructures = room.find(FIND_STRUCTURES, {
-                    filter: s => (s.structureType === STRUCTURE_SPAWN || 
-                                s.structureType === STRUCTURE_EXTENSION || 
-                                s.structureType === STRUCTURE_TOWER) && 
-                                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                });
-                
-                // 根据存储建筑和资源需求计算carrier比例
-                let carrierRatio = 0;
-                
-                if(storageStructures.length > 0 || energyNeedingStructures.length > 0) {
-                    // 基础carrier比例
-                    carrierRatio = 0.15;
-                    
-                    // 根据存储建筑数量增加比例
-                    if(storageStructures.length >= 4) {
-                        carrierRatio += 0.05;
-                    }
-                    
-                    // 添加carrier比例
-                    ratios.carrier = carrierRatio;
-                    
-                    // 从其他角色中均匀减少比例
-                    const reduction = carrierRatio / 6;
-                    for(let role in ratios) {
-                        if(role !== 'carrier') {
-                            ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                        }
-                    }
-                }
-                
-                // 检查是否有矿物和提取器
-                const minerals = room.find(FIND_MINERALS);
-                const extractors = room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_EXTRACTOR
-                });
-                
-                if(minerals.length > 0 && extractors.length > 0) {
-                    // 添加矿物采集者
-                    ratios.mineralHarvester = 0.10;
-                    
-                    // 从其他角色中均匀减少比例
-                    const reduction = 0.10 / (Object.keys(ratios).length - 1);
-                    for(let role in ratios) {
-                        if(role !== 'mineralHarvester') {
-                            ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                        }
-                    }
-                }
-            }
-            
-            // 控制器5级以上：添加链接管理者
-            if(rcl >= 5) {
-                // 检查房间中是否有链接
-                const room = this.getCurrentRoom();
-                if(room) {
-                    const links = room.find(FIND_STRUCTURES, {
-                        filter: s => s.structureType === STRUCTURE_LINK
-                    });
-                    
-                    if(links.length > 0) {
-                        ratios.linkManager = 0.05;
-                        // 从其他角色中均匀减少比例
-                        const reduction = 0.05 / (Object.keys(ratios).length - 1);
-                        for(let role in ratios) {
-                            if(role !== 'linkManager') {
-                                ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // 控制器4级以上：添加存储管理者
-            if(rcl >= 4) {
-                // 检查房间中是否有存储
-                const room = this.getCurrentRoom();
-                if(room && room.storage) {
-                    // 添加存储管理者
-                    ratios.storageManager = 0.10;
-                    
-                    // 从其他角色中均匀减少比例
-                    const reduction = 0.10 / (Object.keys(ratios).length - 1);
-                    for(let role in ratios) {
-                        if(role !== 'storageManager') {
-                            ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                        }
-                    }
-                }
-            }
-        } else {
-            // 控制器7-8级：高级配置
-            ratios = {
-                harvester: 0.15,
-                carrier: 0.15,
-                miner: 0.10,
-                mineralHarvester: 0.10,
-                upgrader: 0.10,
-                builder: 0.10,
-                repairer: 0.10,
-                scout: 0.05,
-                defender: 0.10,
-                rangedAttacker: 0.05,
-                healer: 0.05,
-                linkManager: 0.05,
-                storageManager: 0.10
-            };
-            
-            // 控制器8级：添加核弹管理者
-            if(rcl >= 8) {
-                // 检查房间中是否有核弹发射井
-                const room = this.getCurrentRoom();
-                if(room) {
-                    const nukers = room.find(FIND_MY_STRUCTURES, {
-                        filter: s => s.structureType === STRUCTURE_NUKER
-                    });
-                    
-                    if(nukers.length > 0) {
-                        // 添加核弹管理者
-                        ratios.nukeManager = 0.05;
-                        
-                        // 从其他角色中均匀减少比例
-                        const reduction = 0.05 / (Object.keys(ratios).length - 1);
-                        for(let role in ratios) {
-                            if(role !== 'nukeManager') {
-                                ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 根据能源状态调整比例
-        if(energyStatus === 'critical') {
-            // 能源紧张时，增加采集者和运输者比例
-            ratios.harvester = Math.min(ratios.harvester * 1.5, 0.4);
-            ratios.carrier = Math.min(ratios.carrier * 1.5, 0.4);
-            
-            // 减少其他角色比例
-            for(let role in ratios) {
-                if(role !== 'harvester' && role !== 'carrier') {
-                    ratios[role] = Math.max(ratios[role] * 0.5, 0.05);
-                }
-            }
-        } else if(energyStatus === 'surplus') {
-            // 能源充足时，增加建造者和升级者比例
-            ratios.builder = Math.min(ratios.builder * 1.5, 0.3);
-            ratios.upgrader = Math.min(ratios.upgrader * 1.5, 0.3);
-            
-            // 适当减少采集者比例
-            ratios.harvester = Math.max(ratios.harvester * 0.8, 0.1);
-        }
-        
-        // 控制器等级6及以上时，确保有矿物采集者
-        if(rcl >= 6) {
-            // 检查房间中是否有矿物和提取器
-            const room = this.getCurrentRoom();
-            if(room) {
-                const minerals = room.find(FIND_MINERALS);
-                const extractors = room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_EXTRACTOR
-                });
-                
-                if(minerals.length > 0 && extractors.length > 0) {
-                    // 确保矿物采集者比例不为0
-                    if(!ratios.mineralHarvester || ratios.mineralHarvester < 0.05) {
-                        ratios.mineralHarvester = 0.05;
-                        
-                        // 从其他角色中均匀减少比例
-                        const reduction = 0.05 / Object.keys(ratios).length;
-                        for(let role in ratios) {
-                            if(role !== 'mineralHarvester') {
-                                ratios[role] = Math.max(ratios[role] - reduction, 0.05);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 确保比例总和为1
-        let total = 0;
-        for(let role in ratios) {
-            total += ratios[role];
-        }
-        
-        if(total !== 1) {
-            const factor = 1 / total;
-            for(let role in ratios) {
-                ratios[role] *= factor;
-            }
-        }
-        
-        return ratios;
-    },
-    
-    // 获取当前房间
-    getCurrentRoom: function() {
-        // 尝试获取当前正在处理的房间
-        for(let roomName in Game.rooms) {
-            if(Game.rooms[roomName].controller && Game.rooms[roomName].controller.my) {
-                return Game.rooms[roomName];
-            }
-        }
-        return null;
     },
     
     // 获取最佳采集者数量
@@ -803,53 +478,80 @@ module.exports = {
         }
     },
     
-    // 调整creep角色比例
+    // 调整creep比例
     adjustCreepRatios: function(room) {
-        const distributor = room.memory.energyDistributor;
-        const status = distributor.status.level;
+        // 获取控制器等级
         const rcl = room.controller.level;
         
-        // 根据控制器等级和能源状态调整creep比例
-        distributor.creepRatios = this.getCreepRatios(rcl, status);
+        // 获取能源状态
+        const energyStatus = room.memory.energyStatus;
+        if (!energyStatus) return;
         
-        // 确保比例总和为1
-        let total = 0;
-        for(let role in distributor.creepRatios) {
-            total += distributor.creepRatios[role];
-        }
+        // 获取当前能源状态
+        const currentStatus = energyStatus.currentStatus;
+        const energyLevel = energyStatus.energyLevel;
         
-        if(total !== 1) {
-            const factor = 1 / total;
-            for(let role in distributor.creepRatios) {
-                distributor.creepRatios[role] *= factor;
-            }
-        }
-        
-        // 将比例信息传递给spawner
-        if(!room.memory.creepRatios) {
-            room.memory.creepRatios = {};
-        }
-        
-        // 添加角色优先级信息，与spawner.js中保持一致
-        room.memory.rolePriorities = {
-            harvester: 1,
-            carrier: 2,
-            upgrader: 3,
-            builder: 4,
-            repairer: 5,
-            defender: 1, // 防御单位高优先级
-            healer: 2,
-            rangedAttacker: 2,
-            scout: 6,
-            mineralHarvester: 7,
-            linkManager: 5,
-            nukeManager: 8,
-            storageManager: 5
+        // 基础比例
+        let ratios = {
+            harvester: 0.3,
+            carrier: 0.2,
+            upgrader: 0.2,
+            builder: 0.2,
+            repairer: 0.1
         };
         
-        for(let role in distributor.creepRatios) {
-            room.memory.creepRatios[role] = distributor.creepRatios[role];
+        // 根据控制器等级调整比例
+        if (rcl <= 2) {
+            // 低等级房间，优先采集和升级
+            ratios.harvester = 0.4;
+            ratios.upgrader = 0.3;
+            ratios.builder = 0.2;
+            ratios.repairer = 0.1;
+            ratios.carrier = 0.0;
+        } else if (rcl <= 4) {
+            // 中等级房间，平衡发展
+            ratios.harvester = 0.3;
+            ratios.carrier = 0.2;
+            ratios.upgrader = 0.2;
+            ratios.builder = 0.2;
+            ratios.repairer = 0.1;
+        } else {
+            // 高等级房间，优先建设和维护
+            ratios.harvester = 0.2;
+            ratios.carrier = 0.3;
+            ratios.upgrader = 0.2;
+            ratios.builder = 0.2;
+            ratios.repairer = 0.1;
         }
+        
+        // 根据能源状态调整比例
+        if (currentStatus === 'critical') {
+            // 危急状态，优先采集
+            ratios.harvester = 0.5;
+            ratios.carrier = 0.3;
+            ratios.upgrader = 0.1;
+            ratios.builder = 0.1;
+            ratios.repairer = 0.0;
+        } else if (currentStatus === 'low') {
+            // 低能源状态，增加采集
+            ratios.harvester = 0.4;
+            ratios.carrier = 0.3;
+            ratios.upgrader = 0.1;
+            ratios.builder = 0.1;
+            ratios.repairer = 0.1;
+        } else if (currentStatus === 'high') {
+            // 高能源状态，增加建设和升级
+            ratios.harvester = 0.2;
+            ratios.carrier = 0.2;
+            ratios.upgrader = 0.3;
+            ratios.builder = 0.2;
+            ratios.repairer = 0.1;
+        }
+        
+        // 更新房间内存
+        room.memory.creepRatios = ratios;
+        
+        return ratios;
     },
     
     // 更新统计数据

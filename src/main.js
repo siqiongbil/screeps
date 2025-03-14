@@ -46,6 +46,7 @@ const nukeManager = require('nukeManager');
 const observerManager = require('observerManager');
 const rampartManager = require('rampartManager');
 const storageManager = require('storageManager');
+const memoryManager = require('memoryManager');
 
 // 初始化全局对象
 global.Stats = global.Stats || {
@@ -114,28 +115,36 @@ module.exports.loop = function() {
             global.managers = {};
         }
         
+        // 初始化内存
+        memoryManager.initMemory();
+        
         // 处理每个房间
         for(let roomName in Game.rooms) {
             const room = Game.rooms[roomName];
             
-            // 只处理我们控制的房间
+            // 只处理我控制的房间
             if(!room.controller || !room.controller.my) continue;
             
+            // 检查能源状态
+            energyUtils.checkEnergyStatus(room);
+            
+            // 调整creep比例
+            energyDistributor.adjustCreepRatios(room);
+            
             // 运行孵化系统
-            const spawner = require('spawner');
             spawner.spawnCreeps(room);
             
             // 运行能源分配系统
-            require('energyDistributor').run(room);
+            energyDistributor.run(room);
             
             // 运行防御系统
-            require('battleSystem').run(room);
+            battleSystem.run(room);
             
             // 运行建筑管理系统
-            require('buildingPlanner').run(room);
+            buildingPlanner.run(room);
             
             // 运行资源管理系统
-            require('resourceManager').run(room);
+            resourceManager.run(room);
         }
         
         // 处理所有creep

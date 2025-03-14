@@ -3,6 +3,22 @@
  * 提供与能量管理相关的工具函数
  */
 module.exports = {
+    // 能源阈值常量
+    ENERGY_THRESHOLDS: {
+        CRITICAL: 0.2,  // 低于20%为危急状态
+        LOW: 0.4,       // 低于40%为低能源状态
+        NORMAL: 0.6,    // 低于60%为正常状态
+        HIGH: 0.8       // 高于80%为高能源状态
+    },
+    
+    // 能源状态持续时间常量（单位：tick）
+    ENERGY_STATUS_DURATION: {
+        CRITICAL: 20,   // 危急状态需要持续20个tick才能转变
+        LOW: 30,        // 低能源状态需要持续30个tick才能转变
+        NORMAL: 50,     // 正常状态需要持续50个tick才能转变
+        HIGH: 40        // 高能源状态需要持续40个tick才能转变
+    },
+    
     // 获取房间状态
     getRoomStatus: function(room) {
         // 添加检测间隔，减少CPU消耗
@@ -117,6 +133,12 @@ module.exports = {
 
     // 检查能量紧急状态
     checkEnergyEmergency: function(room) {
+        // 添加安全检查
+        if (!room || !room.memory) {
+            console.log(`[energyUtils] checkEnergyEmergency: 无效的房间`);
+            return { isEmergency: false, level: 0, reason: '无效的房间', adjustedRatios: {} };
+        }
+        
         // 添加检测间隔，减少CPU消耗
         if(!room.memory.lastEmergencyCheck) {
             room.memory.lastEmergencyCheck = 0;
@@ -159,6 +181,18 @@ module.exports = {
             targetRatios = room.memory.creepRatios;
         } else {
             // 默认比例
+            targetRatios = {
+                harvester: 0.3,
+                upgrader: 0.2,
+                builder: 0.2,
+                repairer: 0.1,
+                carrier: 0.2
+            };
+        }
+        
+        // 确保targetRatios不为null或undefined
+        if (!targetRatios) {
+            console.log(`[energyUtils] checkEnergyEmergency: targetRatios 为 ${targetRatios}，使用默认比例`);
             targetRatios = {
                 harvester: 0.3,
                 upgrader: 0.2,
@@ -358,6 +392,19 @@ module.exports = {
     
     // 调整角色比例的辅助函数
     adjustRatios: function(originalRatios, priorityRole, targetRatio) {
+        // 添加安全检查
+        if (!originalRatios) {
+            console.log(`[energyUtils] adjustRatios: originalRatios 为 ${originalRatios}`);
+            // 创建默认比例
+            originalRatios = {
+                harvester: 0.3,
+                upgrader: 0.2,
+                builder: 0.2,
+                repairer: 0.1,
+                carrier: 0.2
+            };
+        }
+        
         const adjustedRatios = {};
         
         // 确保优先角色达到目标比例
@@ -683,22 +730,6 @@ module.exports = {
         return result;
     },
 
-    // 能源状态阈值
-    ENERGY_THRESHOLDS: {
-        CRITICAL: 0.2,  // 低于20%为危急状态
-        LOW: 0.4,       // 低于40%为低能源状态
-        NORMAL: 0.6,    // 低于60%为正常状态
-        HIGH: 0.8       // 低于80%为高能源状态
-    },
-
-    // 能源状态持续时间
-    ENERGY_STATUS_DURATION: {
-        CRITICAL: 500,  // 危急状态持续500个tick
-        LOW: 300,       // 低能源状态持续300个tick
-        NORMAL: 200,    // 正常状态持续200个tick
-        HIGH: 100       // 高能源状态持续100个tick
-    },
-
     // 根据控制器等级获取能源阈值
     getEnergyThresholds: function(rcl) {
         // 根据控制器等级调整阈值
@@ -718,6 +749,12 @@ module.exports = {
 
     // 检查房间能源状态
     checkEnergyStatus: function(room) {
+        // 添加安全检查
+        if (!room || !room.controller) {
+            console.log(`[energyUtils] checkEnergyStatus: 无效的房间`);
+            return null;
+        }
+        
         // 初始化能源状态
         if (!room.memory.energyStatus) {
             room.memory.energyStatus = {
@@ -738,5 +775,47 @@ module.exports = {
         
         // 更新能源水平
         status.energyLevel = energyLevel;
+        
+        // 获取控制器等级
+        const rcl = room.controller.level;
+        
+        // 获取能源阈值
+        const thresholds = this.getEnergyThresholds(rcl);
+        
+        // 确定当前状态
+        let newStatus = 'normal';
+        if (energyLevel < thresholds.CRITICAL) {
+            newStatus = 'critical';
+        } else if (energyLevel < thresholds.LOW) {
+            newStatus = 'low';
+        } else if (energyLevel > thresholds.HIGH) {
+            newStatus = 'high';
+        }
+        
+        // 检查是否需要更新状态
+        if (newStatus !== status.currentStatus) {
+            // 检查状态持续时间
+            const statusDuration = Game.time - status.lastStatusChange;
+            const requiredDuration = this.ENERGY_STATUS_DURATION[status.currentStatus.toUpperCase()] || 0;
+            
+            // 如果状态持续时间足够长，或者是向更糟糕的状态转变，则更新状态
+            if (statusDuration >= requiredDuration || 
+                (newStatus === 'critical' && status.currentStatus !== 'critical') ||
+                (newStatus === 'low' && status.currentStatus === 'normal') ||
+                (newStatus === 'low' && status.currentStatus === 'high')) {
+                
+                // 更新状态
+                status.currentStatus = newStatus;
+                status.lastStatusChange = Game.time;
+                
+                // 记录状态变化
+                console.log(`房间 ${room.name} 能源状态变为 ${newStatus} (${Math.floor(energyLevel * 100)}%)`);
+            }
+        }
+        
+        // 更新房间内存
+        room.memory.energyStatus = status;
+        
+        return status;
     }
 }; 

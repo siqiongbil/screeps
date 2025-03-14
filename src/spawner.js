@@ -175,8 +175,12 @@ class SpawnManager {
                     .slice(0, 1);
                 
                 for(let roomName of roomsToProcess) {
-                    const room = Game.rooms[roomName];
-                    this.processSpawnQueue(room);
+                    try {
+                        const room = Game.rooms[roomName];
+                        this.processSpawnQueue(room);
+                    } catch (error) {
+                        console.log(`处理房间 ${roomName} 生成队列时出错: ${error}`);
+                    }
                 }
                 
                 return;
@@ -184,34 +188,38 @@ class SpawnManager {
             
             // 正常CPU使用率，执行所有操作
             for(let roomName in Game.rooms) {
-                const room = Game.rooms[roomName];
-                
-                // 只处理我们控制的房间
-                if(!room.controller || !room.controller.my) continue;
-                
-                // 初始化房间的生成队列
-                this.initializeQueue(room);
-                
-                // 更新房间状态
-                this.updateRoomStatus(room);
-                
-                // 分析并添加需要生成的creep
-                this.analyzeAndQueueCreeps(room);
-                
-                // 处理生成队列
-                this.processSpawnQueue(room);
-                
-                // 更新统计数据
-                this.updateStats(room);
-                
-                // 检查能源再生
-                this.checkEnergyRegeneration(room);
-                
-                // 优化能源分配
-                this.optimizeEnergyAllocation(room);
+                try {
+                    const room = Game.rooms[roomName];
+                    
+                    // 只处理我们控制的房间
+                    if(!room.controller || !room.controller.my) continue;
+                    
+                    // 初始化房间的生成队列
+                    this.initializeQueue(room);
+                    
+                    // 更新房间状态
+                    this.updateRoomStatus(room);
+                    
+                    // 分析并添加需要生成的creep
+                    this.analyzeAndQueueCreeps(room);
+                    
+                    // 处理生成队列
+                    this.processSpawnQueue(room);
+                    
+                    // 更新统计数据
+                    this.updateStats(room);
+                    
+                    // 检查能源再生
+                    this.checkEnergyRegeneration(room);
+                    
+                    // 优化能源分配
+                    this.optimizeEnergyAllocation(room);
+                } catch (error) {
+                    console.log(`处理房间 ${roomName} 时出错: ${error.stack || error}`);
+                }
             }
         } catch(error) {
-            console.log(`SpawnManager运行错误: ${error}`);
+            console.log(`SpawnManager运行错误: ${error.stack || error}`);
         }
     }
 
@@ -731,8 +739,27 @@ class SpawnManager {
     }
 
     processSpawnQueue(room) {
+        // 添加安全检查
+        if (!room || !room.memory) {
+            console.log(`无法处理无效房间的生成队列: ${room ? room.name : 'undefined'}`);
+            return;
+        }
+        
+        // 确保Memory.spawns.queues存在
+        if (!Memory.spawns || !Memory.spawns.queues) {
+            Memory.spawns = { queues: {} };
+        }
+        
+        // 确保房间队列存在
+        if (!Memory.spawns.queues[room.name]) {
+            Memory.spawns.queues[room.name] = {
+                queue: [],
+                lastProcessTime: 0
+            };
+        }
+        
         const roomQueue = Memory.spawns.queues[room.name];
-        if (!roomQueue || roomQueue.queue.length === 0) return;
+        if (!roomQueue || !roomQueue.queue || roomQueue.queue.length === 0) return;
         
         // 添加检测间隔，减少CPU消耗
         if(!roomQueue.lastProcessTime) {
@@ -752,15 +779,32 @@ class SpawnManager {
         if (availableSpawns.length === 0) return;
         
         // 检查全局限制
-        if (!this.checkLimits(room)) return;
+        try {
+            if (!this.checkLimits(room)) return;
+        } catch (error) {
+            console.log(`[SpawnManager] processSpawnQueue: checkLimits调用错误: ${error}`);
+            // 继续执行，不要因为检查失败而阻止生成
+        }
         
         // 获取房间能量状态
-        const energyStatus = room.memory.energyStatus;
-        if (!energyStatus) return;
+        let energyStatus = room.memory.energyStatus;
+        
+        // 如果能源状态不存在，初始化它
+        if (!energyStatus) {
+            const energyUtils = require('energyUtils');
+            energyStatus = energyUtils.checkEnergyStatus(room);
+            if (!energyStatus) {
+                // 如果仍然无法获取能源状态，使用默认值
+                energyStatus = {
+                    currentStatus: 'normal',
+                    energyLevel: room.energyAvailable / room.energyCapacityAvailable
+                };
+            }
+        }
         
         // 获取当前能源状态
-        const currentStatus = energyStatus.currentStatus;
-        const energyLevel = energyStatus.energyLevel;
+        const currentStatus = energyStatus.currentStatus || 'normal';
+        const energyLevel = energyStatus.energyLevel || (room.energyAvailable / room.energyCapacityAvailable);
         
         // 获取目标数量
         const targetCounts = this.getTargetCounts(room);
@@ -826,26 +870,57 @@ class SpawnManager {
             }
             
             // 检查是否有足够的能量
-            const body = this.getCreepBody(role, room);
+            let body;
+            try {
+                body = this.getCreepBody(role, room);
+                if (!body || !Array.isArray(body) || body.length === 0) {
+                    console.log(`[SpawnManager] 获取 ${role} 的体型返回无效值，跳过此请求`);
+                    continue; // 跳过此请求，继续处理下一个
+                }
+            } catch (error) {
+                console.log(`[SpawnManager] 获取 ${role} 的体型时出错: ${error}`);
+                continue; // 跳过此请求，继续处理下一个
+            }
+            
             const cost = this.calculateBodyCost(body);
             
             if (room.energyAvailable >= cost) {
                 // 尝试生成creep
                 const spawn = availableSpawns[0];
-                const result = spawn.spawnCreep(body, `${role}_${Game.time}`, {
-                    memory: { role: role }
+                const creepName = this.generateCreepName(role);
+                const result = spawn.spawnCreep(body, creepName, {
+                    memory: { role: role, ...(request.memory || {}) }
                 });
                 
                 if (result === OK) {
                     // 生成成功，从队列中移除
                     roomQueue.queue.splice(i, 1);
+                    
+                    // 记录统计信息
+                    try {
+                        this.recordSpawn(room, { role: role, body: body });
+                    } catch (error) {
+                        console.log(`[SpawnManager] 记录生成统计时出错: ${error}`);
+                    }
+                    
                     break;
+                } else {
+                    // 生成失败，记录错误
+                    console.log(`[SpawnManager] 生成 ${role} 失败，错误码: ${result}`);
                 }
+            } else {
+                console.log(`[SpawnManager] 房间 ${room.name} 能量不足以生成 ${role} (需要: ${cost}, 可用: ${room.energyAvailable})`);
             }
         }
     }
 
     calculateBodyCost(body) {
+        // 添加安全检查
+        if (!body || !Array.isArray(body)) {
+            console.log(`[SpawnManager] calculateBodyCost: 无效的体型`);
+            return 200; // 返回一个默认成本
+        }
+        
         let cost = 0;
         for (const part of body) {
             switch (part) {
@@ -873,6 +948,9 @@ class SpawnManager {
                 case TOUGH:
                     cost += 10;
                     break;
+                default:
+                    console.log(`[SpawnManager] calculateBodyCost: 未知的部件类型: ${part}`);
+                    cost += 50; // 默认成本
             }
         }
         return cost;
@@ -892,10 +970,21 @@ class SpawnManager {
 
     // 记录creep生成统计信息
     recordSpawn(room, request) {
+        // 添加安全检查
+        if (!room || !room.name || !request || !request.role) {
+            console.log(`[SpawnManager] recordSpawn: 无效的参数 ${room ? room.name : 'undefined'}, ${request ? request.role : 'undefined'}`);
+            return;
+        }
+        
         // 初始化统计信息
+        if (!Memory.spawns) {
+            Memory.spawns = {};
+        }
+        
         if (!Memory.spawns.stats) {
             Memory.spawns.stats = {};
         }
+        
         if (!Memory.spawns.stats[room.name]) {
             Memory.spawns.stats[room.name] = {
                 total: 0,
@@ -908,16 +997,32 @@ class SpawnManager {
         
         const stats = Memory.spawns.stats[room.name];
         
+        // 确保byRole和byBody对象存在
+        if (!stats.byRole) {
+            stats.byRole = {};
+        }
+        
+        if (!stats.byBody) {
+            stats.byBody = {};
+        }
+        
         // 更新统计信息
-        stats.total++;
+        stats.total = (stats.total || 0) + 1;
         stats.byRole[request.role] = (stats.byRole[request.role] || 0) + 1;
         
         // 记录身体配置
-        const bodyKey = request.body.map(part => BODYPART_COST[part]).join(',');
-        stats.byBody[bodyKey] = (stats.byBody[bodyKey] || 0) + 1;
+        if (request.body && Array.isArray(request.body)) {
+            const bodyKey = request.body.map(part => BODYPART_COST[part] || 0).join(',');
+            stats.byBody[bodyKey] = (stats.byBody[bodyKey] || 0) + 1;
+        }
         
         // 记录生成时间
         stats.lastSpawn = Game.time;
+        
+        if (!stats.spawnTimes) {
+            stats.spawnTimes = [];
+        }
+        
         stats.spawnTimes.push(Game.time);
         
         // 只保留最近1000个tick的生成记录
@@ -928,11 +1033,43 @@ class SpawnManager {
     }
 
     updateStats(room) {
+        // 添加安全检查
+        if (!room || !room.name) {
+            console.log(`[SpawnManager] updateStats: 无效的房间`);
+            return;
+        }
+        
+        // 确保Memory.spawns.stats存在
+        if (!Memory.spawns || !Memory.spawns.stats) {
+            Memory.spawns.stats = {};
+        }
+        
+        // 确保房间统计信息存在
+        if (!Memory.spawns.stats[room.name]) {
+            Memory.spawns.stats[room.name] = {
+                total: 0,
+                byRole: {},
+                byBody: {},
+                lastSpawn: 0,
+                spawnTimes: []
+            };
+        }
+        
         const stats = Memory.spawns.stats[room.name];
-        if (!stats) return;
+        
+        // 添加安全检查
+        if (!stats) {
+            console.log(`[SpawnManager] updateStats: 房间 ${room.name} 的统计信息不存在`);
+            return;
+        }
+        
+        // 确保byRole对象存在
+        if (!stats.byRole) {
+            stats.byRole = {};
+        }
         
         console.log(`房间 ${room.name} 孵化统计:
-            总孵化数: ${stats.total}
+            总孵化数: ${stats.total || 0}
             角色分布:
             ${Object.entries(stats.byRole)
                 .map(([role, count]) => `${role}: ${count}`)
@@ -1152,34 +1289,63 @@ class SpawnManager {
 
     // 获取全局creep数量限制
     getGlobalCreepLimit(room) {
-        // 获取所有我的房间
-        const myRooms = _.filter(Game.rooms, r => r.controller && r.controller.my);
-        
-        // 计算每个房间的基础限制
-        let totalLimit = 0;
-        for (const r of myRooms) {
-            const rcl = r.controller.level;
-            totalLimit += Math.min(
-                rcl * LIMITS.GLOBAL.BASE_PER_ROOM,
-                LIMITS.GLOBAL.MAX_PER_ROOM
-            );
+        // 添加安全检查
+        if (!Game.rooms || !LIMITS || !LIMITS.GLOBAL) {
+            console.log(`[SpawnManager] getGlobalCreepLimit: Game.rooms或LIMITS未定义`);
+            return 20; // 返回一个默认值
         }
         
-        // 添加额外的余量
-        totalLimit += LIMITS.GLOBAL.EXTRA_SLOTS;
-        
-        // 确保不超过绝对上限
-        return Math.min(totalLimit, LIMITS.GLOBAL.ABSOLUTE_MAX);
+        try {
+            // 获取所有我的房间
+            const myRooms = _.filter(Game.rooms, r => r && r.controller && r.controller.my);
+            
+            // 计算每个房间的基础限制
+            let totalLimit = 0;
+            for (const r of myRooms) {
+                if (r && r.controller) {
+                    const rcl = r.controller.level;
+                    totalLimit += Math.min(
+                        rcl * LIMITS.GLOBAL.BASE_PER_ROOM,
+                        LIMITS.GLOBAL.MAX_PER_ROOM
+                    );
+                }
+            }
+            
+            // 添加额外的余量
+            totalLimit += LIMITS.GLOBAL.EXTRA_SLOTS;
+            
+            // 确保不超过绝对上限
+            return Math.min(totalLimit, LIMITS.GLOBAL.ABSOLUTE_MAX);
+        } catch (error) {
+            console.log(`[SpawnManager] getGlobalCreepLimit错误: ${error}`);
+            return 20; // 出错时返回一个默认值
+        }
     }
 
     // 根据能源状态动态调整目标数量
     adjustTargetCountsByEnergyStatus(counts, room) {
-        const energyStatus = room.memory.energyStatus;
-        if (!energyStatus) return;
+        // 添加安全检查
+        if (!counts || !room || !room.memory) {
+            console.log(`无法调整目标数量: ${!counts ? 'counts为空' : !room ? 'room为空' : 'room.memory为空'}`);
+            return counts || {}; // 返回原始数量或空对象
+        }
+        
+        // 获取能源状态
+        let energyStatus = room.memory.energyStatus;
+        
+        // 如果能源状态不存在，初始化它
+        if (!energyStatus) {
+            const energyUtils = require('energyUtils');
+            energyStatus = energyUtils.checkEnergyStatus(room);
+            if (!energyStatus) {
+                // 如果仍然无法获取能源状态，使用默认值
+                return counts; // 直接返回原始数量
+            }
+        }
         
         // 获取当前能源状态
-        const currentStatus = energyStatus.currentStatus;
-        const energyLevel = energyStatus.energyLevel;
+        const currentStatus = energyStatus.currentStatus || 'normal';
+        const energyLevel = energyStatus.energyLevel || (room.energyAvailable / room.energyCapacityAvailable);
         
         // 根据能源状态调整数量
         switch(currentStatus) {
@@ -1187,7 +1353,7 @@ class SpawnManager {
                 // 在危急状态下，增加harvester和carrier的数量
                 counts.harvester = Math.min(
                     counts.harvester * 1.5,
-                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions)
+                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions || this.countHarvestPositions(room))
                 );
                 counts.carrier = Math.min(
                     counts.carrier * 1.5,
@@ -1203,7 +1369,7 @@ class SpawnManager {
                 // 在低能源状态下，适度增加harvester和carrier的数量
                 counts.harvester = Math.min(
                     counts.harvester * 1.2,
-                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions)
+                    this.getMaxHarvesters(room.controller.level, energyStatus.harvestPositions || this.countHarvestPositions(room))
                 );
                 counts.carrier = Math.min(
                     counts.carrier * 1.2,
@@ -1275,6 +1441,8 @@ class SpawnManager {
                 if(remainingSlots <= 0) break;
             }
         }
+        
+        return counts;
     }
     
     // 获取harvester的最大数量
@@ -1381,19 +1549,36 @@ class SpawnManager {
 
     // 添加限制检查方法
     checkLimits(room) {
-        const totalCreeps = Object.keys(Game.creeps).length;
-        const maxCreeps = this.getGlobalCreepLimit(room);
-        
-        if (totalCreeps >= maxCreeps) {
-            console.log(`房间 ${room.name} 已达到全局creep数量限制 (${totalCreeps}/${maxCreeps})`);
-            return false;
+        try {
+            // 添加安全检查
+            if (!Game.creeps) {
+                console.log(`[SpawnManager] checkLimits: Game.creeps未定义`);
+                return true; // 默认允许生成
+            }
+            
+            const totalCreeps = Object.keys(Game.creeps).length;
+            const maxCreeps = this.getGlobalCreepLimit(room) || 20; // 如果返回undefined或null，使用默认值20
+            
+            if (totalCreeps >= maxCreeps) {
+                console.log(`房间 ${room.name} 已达到全局creep数量限制 (${totalCreeps}/${maxCreeps})`);
+                return false;
+            }
+            
+            return true;
+        } catch (error) {
+            console.log(`[SpawnManager] checkLimits错误: ${error}`);
+            return true; // 出错时默认允许生成
         }
-        
-        return true;
     }
 
     // 根据角色和房间状态获取creep的身体配置
     getCreepBody(role, room) {
+        // 添加安全检查
+        if (!room || !room.controller) {
+            console.log(`无法为无效房间获取creep体型: ${room ? room.name : 'undefined'}`);
+            return [WORK, CARRY, MOVE]; // 返回基础体型
+        }
+        
         const rcl = room.controller.level;
         const energyAvailable = room.energyAvailable;
         const energyCapacity = room.energyCapacityAvailable;
@@ -1405,34 +1590,575 @@ class SpawnManager {
             return [WORK, CARRY, MOVE];
         }
         
-        // 获取基础身体配置
-        let body = roleConfig.body;
-        
-        // 根据控制器等级调整身体大小
-        const maxParts = Math.min(
-            Math.floor(energyCapacity / 200), // 每个部分200能量
-            roleConfig.maxParts
-        );
-        
-        // 确保身体大小不超过最大限制
-        if (body.length > maxParts) {
-            body = body.slice(0, maxParts);
+        // 检查是否处于紧急模式
+        const emergencyMode = Memory.spawns.queues[room.name].emergencyMode;
+        if (emergencyMode) {
+            console.log(`房间 ${room.name} 处于紧急模式，使用基础体型`);
+            return this.getEmergencyBody(role);
         }
         
-        // 根据可用能量调整身体大小
-        if (energyAvailable < energyCapacity) {
-            const affordableParts = Math.floor(energyAvailable / 200);
-            if (affordableParts < body.length) {
-                body = body.slice(0, affordableParts);
+        // 根据能量容量选择体型等级
+        let bodyLevel = 'basic';
+        if (energyCapacity >= 1800) bodyLevel = 'advanced';
+        else if (energyCapacity >= 1300) bodyLevel = 'intermediate';
+        else if (energyCapacity >= 800) bodyLevel = 'standard';
+        else if (energyCapacity >= 550) bodyLevel = 'improved';
+        
+        // 根据当前可用能量调整体型等级
+        if (energyAvailable < energyCapacity * 0.7) {
+            // 如果当前能量低于容量的70%，降级体型
+            if (bodyLevel === 'advanced') bodyLevel = 'intermediate';
+            else if (bodyLevel === 'intermediate') bodyLevel = 'standard';
+            else if (bodyLevel === 'standard') bodyLevel = 'improved';
+            else if (bodyLevel === 'improved') bodyLevel = 'basic';
+        }
+        
+        console.log(`为 ${role} 选择 ${bodyLevel} 级别体型 (能量: ${energyAvailable}/${energyCapacity})`);
+        
+        // 根据角色和体型等级返回相应的体型
+        switch (role) {
+            case 'harvester':
+                return this.getHarvesterBodyByLevel(bodyLevel, energyAvailable);
+            case 'carrier':
+                return this.getCarrierBodyByLevel(bodyLevel, energyAvailable);
+            case 'upgrader':
+                return this.getUpgraderBodyByLevel(bodyLevel, energyAvailable);
+            case 'builder':
+                return this.getBuilderBodyByLevel(bodyLevel, energyAvailable);
+            case 'repairer':
+                return this.getRepairerBodyByLevel(bodyLevel, energyAvailable);
+            case 'defender':
+                return this.getDefenderBodyByLevel(bodyLevel, energyAvailable);
+            case 'healer':
+                return this.getHealerBodyByLevel(bodyLevel, energyAvailable);
+            case 'rangedAttacker':
+                return this.getRangedAttackerBodyByLevel(bodyLevel, energyAvailable);
+            case 'scout':
+                return [MOVE, MOVE, MOVE]; // 侦察兵始终使用3个MOVE
+            case 'mineralHarvester':
+                return this.getMineralHarvesterBodyByLevel(bodyLevel, energyAvailable);
+            case 'linkManager':
+            case 'storageManager':
+                return this.getStorageManagerBodyByLevel(bodyLevel, energyAvailable);
+            default:
+                return [WORK, CARRY, MOVE]; // 默认基础体型
+        }
+    }
+    
+    // 紧急情况下的基础体型
+    getEmergencyBody(role) {
+        switch (role) {
+            case 'harvester':
+                return [WORK, CARRY, MOVE];
+            case 'carrier':
+                return [CARRY, CARRY, MOVE];
+            case 'upgrader':
+            case 'builder':
+            case 'repairer':
+                return [WORK, CARRY, MOVE];
+            case 'defender':
+                return [ATTACK, MOVE];
+            case 'healer':
+                return [HEAL, MOVE];
+            case 'rangedAttacker':
+                return [RANGED_ATTACK, MOVE];
+            case 'scout':
+                return [MOVE, MOVE];
+            case 'mineralHarvester':
+                return [WORK, CARRY, MOVE];
+            case 'linkManager':
+            case 'storageManager':
+                return [CARRY, CARRY, MOVE];
+            default:
+                return [WORK, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取harvester体型
+    getHarvesterBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK, WORK,  // 6 WORK
+                        CARRY, CARRY, CARRY,                 // 3 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE         // 5 MOVE
+                    ];
+                }
+                // 如果能量不足，降级
+                return this.getHarvesterBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK,  // 5 WORK
+                        CARRY, CARRY,                  // 2 CARRY
+                        MOVE, MOVE, MOVE, MOVE         // 4 MOVE
+                    ];
+                }
+                return this.getHarvesterBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        WORK, WORK, WORK,       // 3 WORK
+                        CARRY, CARRY,           // 2 CARRY
+                        MOVE, MOVE, MOVE        // 3 MOVE
+                    ];
+                }
+                return this.getHarvesterBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        WORK, WORK,      // 2 WORK
+                        CARRY, CARRY,    // 2 CARRY
+                        MOVE, MOVE       // 2 MOVE
+                    ];
+                }
+                return this.getHarvesterBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [WORK, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取carrier体型
+    getCarrierBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 12 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE                                                   // 6 MOVE
+                    ];
+                }
+                return this.getCarrierBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 8 CARRY
+                        MOVE, MOVE, MOVE, MOVE                                   // 4 MOVE
+                    ];
+                }
+                return this.getCarrierBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 6 CARRY
+                        MOVE, MOVE, MOVE                           // 3 MOVE
+                    ];
+                }
+                return this.getCarrierBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY,  // 4 CARRY
+                        MOVE, MOVE                   // 2 MOVE
+                    ];
+                }
+                return this.getCarrierBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [CARRY, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取upgrader体型
+    getUpgraderBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK,  // 8 WORK
+                        CARRY, CARRY, CARRY, CARRY,                      // 4 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE               // 6 MOVE
+                    ];
+                }
+                return this.getUpgraderBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK, WORK,  // 6 WORK
+                        CARRY, CARRY, CARRY,                 // 3 CARRY
+                        MOVE, MOVE, MOVE, MOVE               // 4 MOVE
+                    ];
+                }
+                return this.getUpgraderBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        WORK, WORK, WORK, WORK,  // 4 WORK
+                        CARRY, CARRY,            // 2 CARRY
+                        MOVE, MOVE, MOVE         // 3 MOVE
+                    ];
+                }
+                return this.getUpgraderBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        WORK, WORK,      // 2 WORK
+                        CARRY, CARRY,    // 2 CARRY
+                        MOVE, MOVE       // 2 MOVE
+                    ];
+                }
+                return this.getUpgraderBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [WORK, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取builder体型
+    getBuilderBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK,        // 5 WORK
+                        CARRY, CARRY, CARRY, CARRY, CARRY,   // 5 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE         // 5 MOVE
+                    ];
+                }
+                return this.getBuilderBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        WORK, WORK, WORK, WORK,     // 4 WORK
+                        CARRY, CARRY, CARRY, CARRY, // 4 CARRY
+                        MOVE, MOVE, MOVE, MOVE      // 4 MOVE
+                    ];
+                }
+                return this.getBuilderBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        WORK, WORK, WORK,    // 3 WORK
+                        CARRY, CARRY, CARRY, // 3 CARRY
+                        MOVE, MOVE, MOVE     // 3 MOVE
+                    ];
+                }
+                return this.getBuilderBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        WORK, WORK,      // 2 WORK
+                        CARRY, CARRY,    // 2 CARRY
+                        MOVE, MOVE       // 2 MOVE
+                    ];
+                }
+                return this.getBuilderBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [WORK, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取repairer体型
+    getRepairerBodyByLevel(level, energy) {
+        // repairer使用与builder相同的体型
+        return this.getBuilderBodyByLevel(level, energy);
+    }
+    
+    // 根据等级获取defender体型
+    getDefenderBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        TOUGH, TOUGH, TOUGH, TOUGH,                          // 4 TOUGH
+                        ATTACK, ATTACK, ATTACK, ATTACK, ATTACK, ATTACK,      // 6 ATTACK
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE  // 10 MOVE
+                    ];
+                }
+                return this.getDefenderBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        TOUGH, TOUGH, TOUGH,                    // 3 TOUGH
+                        ATTACK, ATTACK, ATTACK, ATTACK, ATTACK, // 5 ATTACK
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE  // 8 MOVE
+                    ];
+                }
+                return this.getDefenderBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        TOUGH, TOUGH,                // 2 TOUGH
+                        ATTACK, ATTACK, ATTACK,      // 3 ATTACK
+                        MOVE, MOVE, MOVE, MOVE, MOVE // 5 MOVE
+                    ];
+                }
+                return this.getDefenderBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        TOUGH,           // 1 TOUGH
+                        ATTACK, ATTACK,  // 2 ATTACK
+                        MOVE, MOVE, MOVE // 3 MOVE
+                    ];
+                }
+                return this.getDefenderBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [ATTACK, MOVE];
+        }
+    }
+    
+    // 根据等级获取healer体型
+    getHealerBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        TOUGH, TOUGH,                // 2 TOUGH
+                        HEAL, HEAL, HEAL, HEAL,      // 4 HEAL
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE // 6 MOVE
+                    ];
+                }
+                return this.getHealerBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        TOUGH,                 // 1 TOUGH
+                        HEAL, HEAL, HEAL,      // 3 HEAL
+                        MOVE, MOVE, MOVE, MOVE // 4 MOVE
+                    ];
+                }
+                return this.getHealerBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        HEAL, HEAL,       // 2 HEAL
+                        MOVE, MOVE, MOVE  // 3 MOVE
+                    ];
+                }
+                return this.getHealerBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        HEAL,        // 1 HEAL
+                        MOVE, MOVE   // 2 MOVE
+                    ];
+                }
+                return this.getHealerBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [HEAL, MOVE];
+        }
+    }
+    
+    // 根据等级获取rangedAttacker体型
+    getRangedAttackerBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        TOUGH, TOUGH,                                    // 2 TOUGH
+                        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,  // 5 RANGED_ATTACK
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE        // 7 MOVE
+                    ];
+                }
+                return this.getRangedAttackerBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        TOUGH,                                           // 1 TOUGH
+                        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,  // 4 RANGED_ATTACK
+                        MOVE, MOVE, MOVE, MOVE, MOVE                    // 5 MOVE
+                    ];
+                }
+                return this.getRangedAttackerBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK,  // 3 RANGED_ATTACK
+                        MOVE, MOVE, MOVE                              // 3 MOVE
+                    ];
+                }
+                return this.getRangedAttackerBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        RANGED_ATTACK, RANGED_ATTACK,  // 2 RANGED_ATTACK
+                        MOVE, MOVE                     // 2 MOVE
+                    ];
+                }
+                return this.getRangedAttackerBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [RANGED_ATTACK, MOVE];
+        }
+    }
+    
+    // 根据等级获取mineralHarvester体型
+    getMineralHarvesterBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK, WORK, WORK, WORK,  // 8 WORK
+                        CARRY, CARRY, CARRY, CARRY,                      // 4 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE               // 6 MOVE
+                    ];
+                }
+                return this.getMineralHarvesterBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        WORK, WORK, WORK, WORK, WORK, WORK,  // 6 WORK
+                        CARRY, CARRY, CARRY,                 // 3 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE         // 5 MOVE
+                    ];
+                }
+                return this.getMineralHarvesterBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        WORK, WORK, WORK, WORK,  // 4 WORK
+                        CARRY, CARRY,            // 2 CARRY
+                        MOVE, MOVE, MOVE, MOVE   // 4 MOVE
+                    ];
+                }
+                return this.getMineralHarvesterBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        WORK, WORK, WORK,  // 3 WORK
+                        CARRY,             // 1 CARRY
+                        MOVE, MOVE         // 2 MOVE
+                    ];
+                }
+                return this.getMineralHarvesterBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [WORK, CARRY, MOVE];
+        }
+    }
+    
+    // 根据等级获取storageManager体型
+    getStorageManagerBodyByLevel(level, energy) {
+        switch (level) {
+            case 'advanced': // 1800+ 能量
+                if (energy >= 1800) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 16 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE           // 8 MOVE
+                    ];
+                }
+                return this.getStorageManagerBodyByLevel('intermediate', energy);
+                
+            case 'intermediate': // 1300+ 能量
+                if (energy >= 1300) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,
+                        CARRY, CARRY, CARRY, CARRY,  // 12 CARRY
+                        MOVE, MOVE, MOVE, MOVE, MOVE, MOVE  // 6 MOVE
+                    ];
+                }
+                return this.getStorageManagerBodyByLevel('standard', energy);
+                
+            case 'standard': // 800+ 能量
+                if (energy >= 800) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 8 CARRY
+                        MOVE, MOVE, MOVE, MOVE  // 4 MOVE
+                    ];
+                }
+                return this.getStorageManagerBodyByLevel('improved', energy);
+                
+            case 'improved': // 550+ 能量
+                if (energy >= 550) {
+                    return [
+                        CARRY, CARRY, CARRY, CARRY, CARRY, CARRY,  // 6 CARRY
+                        MOVE, MOVE, MOVE  // 3 MOVE
+                    ];
+                }
+                return this.getStorageManagerBodyByLevel('basic', energy);
+                
+            case 'basic': // 基础体型
+            default:
+                return [CARRY, CARRY, MOVE];
+        }
+    }
+
+    // 检查是否需要生成新的creep
+    checkSpawnNeeds(room) {
+        // 获取目标数量
+        const targetCounts = this.getTargetCounts(room);
+        
+        // 获取当前数量
+        const currentCounts = {};
+        for (const role in targetCounts) {
+            currentCounts[role] = _.filter(Game.creeps, c => c.memory.role === role && c.room.name === room.name).length;
+        }
+        
+        // 检查每个角色是否需要生成
+        for (const role in targetCounts) {
+            const target = targetCounts[role];
+            const current = currentCounts[role] || 0;
+            
+            // 如果当前数量小于目标数量，添加到生成队列
+            if (current < target) {
+                // 计算优先级
+                let priority = 100;
+                if (role === 'harvester') {
+                    priority = 10;
+                } else if (role === 'carrier') {
+                    priority = 20;
+                } else if (role === 'upgrader') {
+                    priority = 30;
+                } else if (role === 'builder') {
+                    priority = 40;
+                } else if (role === 'repairer') {
+                    priority = 50;
+                } else if (role === 'defender' || role === 'healer' || role === 'rangedAttacker') {
+                    priority = 5;
+                }
+                
+                // 添加到生成队列
+                this.queueCreep(room, {
+                    role: role,
+                    priority: priority
+                });
             }
         }
-        
-        // 确保至少有一个基本部分
-        if (body.length === 0) {
-            body = [WORK, CARRY, MOVE];
-        }
-        
-        return body;
+    }
+
+    // 计算可开采位置数量
+    countHarvestPositions(room) {
+        const energyUtils = require('energyUtils');
+        return energyUtils.countHarvestPositions(room);
     }
 }
 
